@@ -38,8 +38,9 @@ Managed with the Supabase CLI under `supabase/migrations/`. Current tables (all 
   approvals, etc.). `id`, `created_at`, `product_candidate_id` (FK →
   `product_candidates.id`), `decision_type`, `decision`, `notes`, `decided_by`.
 
-`product_candidates` currently has a temporary public-read policy plus an `anon`
-`SELECT` grant for Phase 0 testing — tighten before shipping real data.
+`product_candidates` and `agent_runs` are restricted to the `service_role` (see
+"Protected routes" below for why) — all reads/writes from the app go through
+`src/lib/supabase-admin.ts` server-side, never the `anon` client, for these two tables.
 
 ## Migrations convention
 
@@ -54,3 +55,16 @@ Migration files are timestamp-prefixed and immutable once pushed — to change a
 add a new migration rather than editing an existing one. Keep each migration focused
 (schema change, policy change, and grants can be separate files, as in the initial
 3 migrations).
+
+## Protected routes
+
+`src/proxy.ts` (the Next.js 16 successor to `middleware.ts` — see the breaking-changes
+block at the top of this file) gates internal-only routes behind simple HTTP Basic Auth,
+checked against the `SCOUT_AUTH_USER` / `SCOUT_AUTH_PASSWORD` env vars. It fails closed:
+if those env vars aren't set, every matched route returns 401.
+
+Currently protected: `/scout` and `/api/agents/scout` (and their subpaths). To protect
+another route, add it to the `matcher` array in `src/proxy.ts` — no new auth logic needed,
+the same check applies to everything in the matcher. If a route needs different
+credentials or a different auth scheme, branch on `request.nextUrl.pathname` inside
+`proxy()` rather than adding a second proxy file (only one is allowed per project).

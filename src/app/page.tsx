@@ -1,7 +1,7 @@
-import { supabase } from '@/lib/supabase';
+import { supabaseAdmin } from '@/lib/supabase-admin';
 
 export default async function Home() {
-  const { count, error } = await supabase
+  const { count, error } = await supabaseAdmin
     .from('product_candidates')
     .select('*', { count: 'exact', head: true });
 

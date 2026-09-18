@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod';
 import { z } from 'zod';
+import type { CompetitorReview } from './reviews-provider';
 import type { CompetitivePricingResult, FeesEstimate } from './sp-api';
 
 const MODEL = 'claude-sonnet-4-6';
@@ -204,6 +205,114 @@ ${JSON.stringify(context.costManual)}`,
 
   if (!response.parsed_output) {
     throw new Error(`Claude no devolvió un veredicto parseable para el ASIN "${context.asin}"`);
+  }
+
+  return response.parsed_output;
+}
+
+// --- Review Intelligence Agent ---
+
+const reviewInsightItemSchema = z.object({
+  texto: z.string(),
+  confianza: z.enum(['alta', 'media']),
+  evidencia_count: z.number(),
+});
+
+export type ReviewInsightItem = z.infer<typeof reviewInsightItemSchema>;
+
+export const reviewIntelligenceSchema = z.object({
+  problemas_reportados: z.array(reviewInsightItemSchema),
+  deseos_no_satisfechos: z.array(reviewInsightItemSchema),
+  caracteristicas_faltantes: z.array(reviewInsightItemSchema),
+  motivos_compra: z.array(reviewInsightItemSchema),
+  motivos_devolucion: z.array(reviewInsightItemSchema),
+  prd_document: z.string(),
+  confianza_general: z.enum(['alta', 'media', 'sin_dato']),
+  nota_metodologica: z.string(),
+});
+
+export type ReviewIntelligenceResult = z.infer<typeof reviewIntelligenceSchema>;
+
+const REVIEW_INTELLIGENCE_SYSTEM_PROMPT = `Eres un analista de producto para un negocio que vende en Amazon México.
+Tu tarea es leer reviews REALES de productos competidores (no del producto propio) y
+extraer patrones objetivos para decidir cómo debería diferenciarse un producto nuevo.
+
+REGLAS ESTRICTAS — no son sugerencias, son requisitos:
+
+1. NUNCA inventes ni generalices un patrón que no esté sustentado por el texto real de
+   las reviews que se te dieron. Si una categoría no tiene ningún patrón claro, su array
+   debe quedar vacío. Un array vacío es un resultado válido y preferible a un ítem
+   fabricado.
+
+2. Reglas de confianza por ítem, basadas en cuántas reviews distintas y de cuántos ASINs
+   distintos lo mencionan (usa el campo "asin" de cada review para contar ASINs únicos):
+   - "alta": mencionado en 3 o más reviews Y en 2 o más ASINs distintos.
+   - "media": mencionado en 1-2 reviews, o en 3+ reviews pero de un solo ASIN.
+   - No emitas un ítem si no tiene ningún sustento textual — omítelo del array.
+
+3. evidencia_count debe ser el número real de reviews que sustentan ese ítem específico.
+
+4. confianza_general del análisis completo:
+   - "sin_dato" si en total se recibieron menos de 5 reviews utilizables.
+   - "media" si hay entre 5 y 20 reviews utilizables, o si están concentradas en un solo ASIN.
+   - "alta" solo si hay más de 20 reviews utilizables repartidas en al menos 2 ASINs.
+
+5. prd_document: escribe un documento breve en markdown titulado "Así debería ser nuestro
+   producto", basado ÚNICAMENTE en los patrones que sí encontraste. Si confianza_general
+   es "sin_dato" o "media", dilo explícitamente al inicio del documento en vez de redactar
+   con tono de certeza. Parafrasea los patrones; no copies reviews completas textualmente.
+
+6. nota_metodologica: describe brevemente cuántas reviews de cuáles ASINs se analizaron y
+   cualquier limitación relevante.`;
+
+function buildReviewIntelligenceUserPrompt(
+  reviews: CompetitorReview[],
+  competitorAsins: string[],
+  ourProductContext?: string,
+): string {
+  const reviewsForPrompt = reviews.map((r) => ({
+    asin: r.asin,
+    rating: r.rating,
+    title: r.title,
+    body: r.body,
+    verified_purchase: r.verified_purchase,
+    reviewed_in: r.reviewed_in_raw,
+  }));
+
+  return `ASINs de competidores analizados: ${competitorAsins.join(', ')}
+
+${ourProductContext ? `Contexto de nuestro producto candidato (para orientar el PRD):\n${ourProductContext}\n\n` : ''}Reviews recopiladas (${reviews.length} en total):
+
+${JSON.stringify(reviewsForPrompt, null, 2)}
+
+Analiza estas reviews siguiendo exactamente las reglas del system prompt.`;
+}
+
+// Recibe las reviews crudas de competidores (Apify) + los ASINs analizados + contexto
+// opcional del producto candidato propio, y devuelve el análisis estructurado que se
+// guarda en review_insights.insights / .prd_document.
+export async function analyzeCompetitorReviews(
+  reviews: CompetitorReview[],
+  competitorAsins: string[],
+  ourProductContext?: string,
+): Promise<ReviewIntelligenceResult> {
+  const response = await client.messages.parse({
+    model: MODEL,
+    max_tokens: 4000,
+    system: REVIEW_INTELLIGENCE_SYSTEM_PROMPT,
+    messages: [
+      {
+        role: 'user',
+        content: buildReviewIntelligenceUserPrompt(reviews, competitorAsins, ourProductContext),
+      },
+    ],
+    output_config: {
+      format: zodOutputFormat(reviewIntelligenceSchema),
+    },
+  });
+
+  if (!response.parsed_output) {
+    throw new Error('Claude no devolvió un análisis de reviews parseable');
   }
 
   return response.parsed_output;

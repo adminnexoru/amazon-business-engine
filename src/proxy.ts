@@ -11,6 +11,10 @@ export const config = {
     '/api/agents/scout/:path*',
     '/api/agents/analyst',
     '/api/agents/analyst/:path*',
+    '/review-intelligence',
+    '/review-intelligence/:path*',
+    '/api/agents/review-intelligence',
+    '/api/agents/review-intelligence/:path*',
   ],
 };
 

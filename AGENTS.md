@@ -36,6 +36,8 @@ loop for final BUY/TEST/REJECT calls.
 - SP-API (LWA): `SP_API_CLIENT_ID`, `SP_API_CLIENT_SECRET`, `SP_API_REFRESH_TOKEN`
 - Claude: `ANTHROPIC_API_KEY`
 - Basic Auth de rutas protegidas: `SCOUT_AUTH_USER`, `SCOUT_AUTH_PASSWORD`
+- Apify (Review Intelligence Agent): `APIFY_API_TOKEN`, `APIFY_REVIEWS_ACTOR_ID`
+  (`junglee~amazon-reviews-scraper`), `REVIEW_AGENT_MAX_ASINS_PER_RUN` (default `5`)
 
 ### Roles SP-API activos
 
@@ -121,10 +123,17 @@ Managed with the Supabase CLI under `supabase/migrations/`. Current tables (all 
 - **`decisions`** — human decisions tied to a candidate (BUY/TEST/REJECT, inventory
   approvals, etc.). `id`, `created_at`, `product_candidate_id` (FK →
   `product_candidates.id`), `decision_type`, `decision`, `notes`, `decided_by`.
+- **`review_insights`** — output of the Review Intelligence agent.
+  `id`, `created_at`, `product_candidate_id` (FK → `product_candidates.id`, nullable —
+  Modo A runs aren't linked to a candidate), `competitor_asins` (jsonb array),
+  `status` (default `'pending'`; one of
+  `pending | running | complete | error | sin_fuente_datos`), `reviews_source`,
+  `raw_reviews` (jsonb), `insights` (jsonb — the 5 categories), `prd_document`,
+  `confianza_general` (`alta | media | sin_dato`), `nota_metodologica`, `error_message`.
 
-`product_candidates` and `agent_runs` are restricted to the `service_role` (see
-"Protected routes" below for why) — all reads/writes from the app go through
-`src/lib/supabase-admin.ts` server-side, never the `anon` client, for these two tables.
+`product_candidates`, `agent_runs`, and `review_insights` are restricted to the
+`service_role` (see "Protected routes" below for why) — all reads/writes from the app go
+through `src/lib/supabase-admin.ts` server-side, never the `anon` client, for these tables.
 
 ## Migrations convention
 
@@ -183,6 +192,38 @@ Logged to `agent_runs` with `agent_name: 'analyst_agent'`. UI: the "Analizar" /
 "Reanalizar" control on `/scout` (`AnalystPanel.tsx`), shown for candidates with
 `status` `pending` or `necesita_mas_datos`.
 
+### Review Intelligence Agent
+
+`POST /api/agents/review-intelligence` — `{ competitor_asins: string[], product_candidate_id?: string }`.
+Two modes: **Modo A** — hand-picked competitor ASINs with no linked candidate. **Modo B** —
+same, but linked to an existing `product_candidate` (its `raw_data` is passed to Claude as
+extra context for the PRD). Rejects with 400 if `competitor_asins` is empty or longer than
+`REVIEW_AGENT_MAX_ASINS_PER_RUN` (default 5).
+
+1. Calls `getCompetitorReviews(asins)` (`src/lib/reviews-provider.ts`), which hits the Apify
+   actor `junglee/amazon-reviews-scraper` once per ASIN (its free plan caps 1 URL/10 reviews
+   per run, so no batching).
+   - If `APIFY_API_TOKEN`/`APIFY_REVIEWS_ACTOR_ID` aren't set, this throws
+     `NoReviewsSourceConfiguredError`: the route saves `review_insights.status: 'sin_fuente_datos'`
+     and returns 200 — this is an expected, valid state until Apify is configured, not a 500.
+   - If Apify returns zero reviews for every ASIN, the route saves `status: 'complete'`,
+     `confianza_general: 'sin_dato'`, and **does not call Claude** — never inventing an
+     analysis from no data.
+2. Otherwise, calls `analyzeCompetitorReviews()` (`src/lib/claude-analysis.ts`) with the raw
+   reviews. Claude extracts 5 categories (`problemas_reportados`, `deseos_no_satisfechos`,
+   `caracteristicas_faltantes`, `motivos_compra`, `motivos_devolucion`), each an array of
+   `{ texto, confianza: 'alta'|'media', evidencia_count }` — an item with no textual support
+   is omitted rather than fabricated. `confianza: 'alta'` requires the pattern in ≥3 reviews
+   across ≥2 distinct ASINs. Also returns `prd_document` (a "así debería ser nuestro
+   producto" markdown doc), `confianza_general`, and `nota_metodologica`.
+3. Saves the full result to `review_insights`; if `product_candidate_id` was given, also
+   merges it into that candidate's `raw_data.review_intelligence` (same pattern as
+   `raw_data.analyst`).
+
+Logged to `agent_runs` with `agent_name: 'review_intelligence_agent'`. UI: `/review-intelligence`
+(`ReviewIntelligenceForm.tsx`) — accepts `?product_candidate_id=` to preselect a candidate,
+linked from a "Reviews →" link per row on `/scout`.
+
 ## Protected routes
 
 `src/proxy.ts` (the Next.js 16 successor to `middleware.ts` — see the breaking-changes
@@ -190,9 +231,9 @@ block at the top of this file) gates internal-only routes behind simple HTTP Bas
 checked against the `SCOUT_AUTH_USER` / `SCOUT_AUTH_PASSWORD` env vars. It fails closed:
 if those env vars aren't set, every matched route returns 401.
 
-Currently protected: `/scout`, `/api/agents/scout`, and `/api/agents/analyst` (and their
-subpaths). To protect another route, add it to the `matcher` array in `src/proxy.ts` — no
-new auth logic needed,
-the same check applies to everything in the matcher. If a route needs different
+Currently protected: `/scout`, `/api/agents/scout`, `/api/agents/analyst`,
+`/review-intelligence`, and `/api/agents/review-intelligence` (and their subpaths). To
+protect another route, add it to the `matcher` array in `src/proxy.ts` — no new auth logic
+needed, the same check applies to everything in the matcher. If a route needs different
 credentials or a different auth scheme, branch on `request.nextUrl.pathname` inside
 `proxy()` rather than adding a second proxy file (only one is allowed per project).

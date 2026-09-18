@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { AnalystPanel } from './AnalystPanel';
 import { ScoutForm } from './ScoutForm';
@@ -51,6 +52,7 @@ export default async function ScoutPage() {
                   <th className="px-4 py-2">Estado</th>
                   <th className="px-4 py-2">Análisis</th>
                   <th className="px-4 py-2">Creado</th>
+                  <th className="px-4 py-2"></th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800">
@@ -77,12 +79,20 @@ export default async function ScoutPage() {
                       <td className="px-4 py-2 text-slate-400">
                         {new Date(c.created_at).toLocaleString('es-MX')}
                       </td>
+                      <td className="px-4 py-2">
+                        <Link
+                          href={`/review-intelligence?product_candidate_id=${c.id}`}
+                          className="text-xs text-emerald-400 hover:underline"
+                        >
+                          Reviews →
+                        </Link>
+                      </td>
                     </tr>
                   );
                 })}
                 {candidates?.length === 0 && (
                   <tr>
-                    <td colSpan={7} className="px-4 py-6 text-center text-slate-500">
+                    <td colSpan={8} className="px-4 py-6 text-center text-slate-500">
                       Sin candidatos todavía.
                     </td>
                   </tr>

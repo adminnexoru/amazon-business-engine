@@ -14,6 +14,86 @@ Autonomous Amazon Business Engine: a system of agents that scouts, evaluates, an
 tracks decisions about candidate products to sell on Amazon, with a human in the
 loop for final BUY/TEST/REJECT calls.
 
+## Estado del proyecto (actualizado)
+
+### Fases completadas
+
+- **Fase 0** — arquitectura, hosting en Vercel, dominio `abe.nexoru.ai`, conexión a Supabase.
+- **Fase 1** — Scout Agent (SP-API Catalog Items + Claude), protegido con Basic Auth en
+  `/scout` y `/api/agents/scout` (variables `SCOUT_AUTH_USER`/`SCOUT_AUTH_PASSWORD`; ver
+  "Agents" y "Protected routes" más abajo).
+- **Fase 1.5** — Product Analyst Agent: evalúa 12 variables (Precio, BSR, Reviews, Rating,
+  Competencia, Trend, Sales estimate, Revenue estimate, Amazon fees, Cost, Margin,
+  Differentiation), cada una con nivel de confianza (alta/media/sin_dato). Usa SP-API
+  Pricing API + Product Fees API (FBA y FBM). Costo manual opcional para calcular Margin.
+  Veredicto: test/reject/necesita_mas_datos. Endpoint protegido igual que Scout (ver
+  "Agents" más abajo para el detalle completo).
+
+### Variables de entorno usadas (nombres, sin valores)
+
+- Supabase: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`,
+  `SUPABASE_SERVICE_ROLE_KEY`
+- SP-API (LWA): `SP_API_CLIENT_ID`, `SP_API_CLIENT_SECRET`, `SP_API_REFRESH_TOKEN`
+- Claude: `ANTHROPIC_API_KEY`
+- Basic Auth de rutas protegidas: `SCOUT_AUTH_USER`, `SCOUT_AUTH_PASSWORD`
+
+### Roles SP-API activos
+
+Listing de producto, Precios (marketplace México). Agregar el rol correspondiente en
+Seller Central antes de consumir una API nueva desde un agente (ver Fase 6 en el roadmap
+para el próximo rol que hará falta).
+
+### Principios de diseño establecidos
+
+- Nunca inventar datos: una variable sin fuente confiable queda como `sin_dato`, nunca se
+  estima por default.
+- Cada variable de un análisis debe mostrar su nivel de confianza junto al valor, no solo
+  el valor.
+- RLS activado en toda tabla nueva desde su creación; cambios de schema siempre vía
+  migraciones de Supabase CLI (ver "Migrations convention").
+- Autonomía en 3 niveles: verde (autónomo), amarillo (autónomo + aprobación humana), rojo
+  (solo humano) — nunca automatizar pagos, contratos o compras grandes.
+- Rutas que consumen cuota de APIs pagadas siempre protegidas con auth (ver
+  "Protected routes").
+
+### Pendientes conocidos (no bloqueantes)
+
+- Hazmat: el Product Analyst Agent detecta riesgo hazmat en texto libre (dentro de
+  `nota_metodologica`/`differentiation`); falta capturarlo como campo estructurado
+  (`hazmat_risk` boolean).
+- Rotar `SP_API_CLIENT_SECRET` si se comparte en capturas de pantalla o chats.
+- Migrar de Basic Auth a Supabase Auth cuando haya más de un usuario.
+
+### Roadmap restante
+
+- **Fase 2 — Review Intelligence Agent**: lee reviews de productos competidores (cuando
+  haya fuente de datos disponible) y extrae: problemas reportados, deseos no satisfechos,
+  características faltantes, motivos de compra, motivos de devolución. Genera un documento
+  tipo "así debería ser nuestro producto" (Product Requirement Document preliminar).
+- **Fase 3 — Supplier Agent**: busca y compara proveedores (vía plataformas como Alibaba u
+  otras), compara precio/MOQ/tiempo de entrega entre opciones, calcula landed cost. Nivel
+  de autonomía: 🟡 auto+aprobación en la selección final del proveedor.
+- **Fase 4 — Procurement Agent + Buy Simulator**: una vez aprobado un proveedor, prepara
+  RFQ, especificaciones, orden de compra — deja solo la autorización final de pago al
+  humano (🟡). Incluye el "Buy Simulator": dado capital disponible, costo landed y precio
+  de venta, simula distintos volúmenes de compra mostrando inversión, revenue esperado,
+  profit, sell-through estimado y capital recovery, para decidir cuánto comprar, no solo
+  si comprar.
+- **Fase 5 — Listing + Marketing Agent**: genera título, bullets, descripción, backend
+  keywords, A+ content; compara el listing propio vs. top 10 competidores. Gestiona PPC:
+  analiza CTR/CVR/ACOS/TACOS y ajusta bids bajo límites definidos (🟢 autónomo dentro de
+  límites; 🟡 cambios grandes de presupuesto requieren aprobación).
+- **Fase 6 — Inventory Agent**: vigila inventory, sales velocity, lead time, MOQ, cash
+  disponible y seasonality; calcula reorder point y PO recomendada. SIEMPRE requiere 🔐
+  Human Approval antes de ejecutar una compra de inventario, porque compromete capital
+  real. Requiere agregar el rol SP-API "Seguimiento de pedidos e inventario" cuando se
+  llegue a esta fase.
+- **Fase 7 — Autonomous Business Manager**: una vez que hay historial acumulado (productos
+  analizados, comprados, rechazados, proveedores, precios, ventas reales, márgenes,
+  returns, advertising, reviews, inventory, seasonality), el sistema puede responder
+  preguntas como "tengo $300,000 MXN, ¿dónde los invertirías?" con explicación y
+  escenarios, basado en datos reales de la propia tienda, no solo estimaciones de mercado.
+
 ## Stack
 
 - Next.js 16 (App Router) + TypeScript
@@ -91,9 +171,11 @@ pricing data before asking Claude for a BUY-adjacent verdict:
    (`test | reject | necesita_mas_datos`), `justificacion`, and `nota_metodologica`.
    Reviews, Rating, Trend, Sales estimate, and Revenue estimate are always `sin_dato`
    in practice — there's no Keepa (or equivalent) integration yet, so nothing feeds
-   those variables. Margin inherits the lowest confidence of Precio/Amazon fees/Cost,
-   and is `sin_dato` (with `veredicto: 'necesita_mas_datos'`) whenever price or cost is
-   missing.
+   those variables. Margin inherits the lowest confidence of Precio/Amazon fees/Cost, and
+   is `sin_dato` whenever price or cost is missing. `veredicto: 'necesita_mas_datos'` is
+   forced not only when Margin is `sin_dato`, but also when a manual cost was provided but
+   looks implausible for the product type (e.g. too low given its materials/battery/size) —
+   an arithmetically valid Margin isn't trusted if its cost input isn't.
 5. Updates the candidate's `status` to the verdict, merges `raw_data.analyst` (verdict +
    raw pricing/fees results), and sets `cost_manual`/`cost_source` from the request.
 

@@ -4,7 +4,14 @@ import type { NextRequest } from 'next/server';
 // Protege rutas internas (Scout Agent y cualquier otra que se agregue al matcher) con
 // HTTP Basic Auth simple. Ver AGENTS.md § "Rutas protegidas" para cómo agregar más.
 export const config = {
-  matcher: ['/scout', '/scout/:path*', '/api/agents/scout', '/api/agents/scout/:path*'],
+  matcher: [
+    '/scout',
+    '/scout/:path*',
+    '/api/agents/scout',
+    '/api/agents/scout/:path*',
+    '/api/agents/analyst',
+    '/api/agents/analyst/:path*',
+  ],
 };
 
 function unauthorized() {

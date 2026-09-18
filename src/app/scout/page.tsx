@@ -1,12 +1,24 @@
 import { supabaseAdmin } from '@/lib/supabase-admin';
+import { AnalystPanel } from './AnalystPanel';
 import { ScoutForm } from './ScoutForm';
 
 export const dynamic = 'force-dynamic';
 
+interface AnalystRawData {
+  analyst?: {
+    verdict: {
+      variables: Record<string, { valor: string; confianza: 'alta' | 'media' | 'sin_dato' }>;
+      veredicto: 'test' | 'reject' | 'necesita_mas_datos';
+      justificacion: string;
+      nota_metodologica: string;
+    };
+  };
+}
+
 export default async function ScoutPage() {
   const { data: candidates, error } = await supabaseAdmin
     .from('product_candidates')
-    .select('id, created_at, source, title, asin, category, estimated_competition, status')
+    .select('id, created_at, source, title, asin, category, estimated_competition, status, raw_data')
     .order('created_at', { ascending: false })
     .limit(50);
 
@@ -37,29 +49,40 @@ export default async function ScoutPage() {
                   <th className="px-4 py-2">Categoría</th>
                   <th className="px-4 py-2">Competencia</th>
                   <th className="px-4 py-2">Estado</th>
+                  <th className="px-4 py-2">Análisis</th>
                   <th className="px-4 py-2">Creado</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800">
-                {candidates?.map((c) => (
-                  <tr key={c.id}>
-                    <td className="px-4 py-2">{c.title}</td>
-                    <td className="px-4 py-2 font-mono text-xs">{c.asin ?? '—'}</td>
-                    <td className="px-4 py-2">{c.category ?? '—'}</td>
-                    <td className="px-4 py-2">{c.estimated_competition ?? '—'}</td>
-                    <td className="px-4 py-2">
-                      <span className={c.status === 'error' ? 'text-red-400' : 'text-slate-200'}>
-                        {c.status}
-                      </span>
-                    </td>
-                    <td className="px-4 py-2 text-slate-400">
-                      {new Date(c.created_at).toLocaleString('es-MX')}
-                    </td>
-                  </tr>
-                ))}
+                {candidates?.map((c) => {
+                  const rawData = c.raw_data as AnalystRawData | null;
+                  return (
+                    <tr key={c.id}>
+                      <td className="px-4 py-2">{c.title}</td>
+                      <td className="px-4 py-2 font-mono text-xs">{c.asin ?? '—'}</td>
+                      <td className="px-4 py-2">{c.category ?? '—'}</td>
+                      <td className="px-4 py-2">{c.estimated_competition ?? '—'}</td>
+                      <td className="px-4 py-2">
+                        <span className={c.status === 'error' ? 'text-red-400' : 'text-slate-200'}>
+                          {c.status}
+                        </span>
+                      </td>
+                      <td className="px-4 py-2">
+                        <AnalystPanel
+                          candidateId={c.id}
+                          status={c.status}
+                          verdict={rawData?.analyst?.verdict ?? null}
+                        />
+                      </td>
+                      <td className="px-4 py-2 text-slate-400">
+                        {new Date(c.created_at).toLocaleString('es-MX')}
+                      </td>
+                    </tr>
+                  );
+                })}
                 {candidates?.length === 0 && (
                   <tr>
-                    <td colSpan={6} className="px-4 py-6 text-center text-slate-500">
+                    <td colSpan={7} className="px-4 py-6 text-center text-slate-500">
                       Sin candidatos todavía.
                     </td>
                   </tr>

@@ -27,10 +27,14 @@ loop for final BUY/TEST/REJECT calls.
 Managed with the Supabase CLI under `supabase/migrations/`. Current tables (all in
 `public`, all with Row Level Security enabled):
 
-- **`product_candidates`** — product opportunities found by the Scout agent.
+- **`product_candidates`** — product opportunities found by the Scout agent and enriched
+  by the Product Analyst agent.
   `id`, `created_at`, `source`, `title`, `asin`, `category`, `estimated_price`,
   `estimated_demand`, `estimated_competition`, `estimated_margin_pct`, `raw_data`
-  (jsonb), `status` (default `'pending'`).
+  (jsonb; Scout writes `catalog`/`analysis`, Analyst writes `analyst`), `cost_manual`
+  (numeric, nullable — human-entered unit cost when there's no real sourcing cost yet),
+  `cost_source` (text, nullable — `'manual_estimate'` or `null`), `status` (default
+  `'pending'`; one of `pending | analyzing | test | reject | necesita_mas_datos | error`).
 - **`agent_runs`** — execution history for every agent run.
   `id`, `created_at`, `agent_name`, `status` (default `'running'`), `input` (jsonb),
   `output` (jsonb), `error_message`, `duration_ms`.
@@ -56,6 +60,47 @@ add a new migration rather than editing an existing one. Keep each migration foc
 (schema change, policy change, and grants can be separate files, as in the initial
 3 migrations).
 
+## Agents
+
+### Scout Agent
+
+`POST /api/agents/scout` — `{ inputs: string[] }` (ASINs or keywords, one per entry).
+For each input, looks up the item via the Catalog Items API (`src/lib/sp-api.ts`),
+runs a qualitative read with Claude (`analyzeCatalogItem` in `src/lib/claude-analysis.ts`),
+and inserts a row into `product_candidates` with `status: 'pending'` and
+`raw_data: { catalog, analysis }`. Every call is logged to `agent_runs` with
+`agent_name: 'scout_agent'`. UI: `/scout` (`ScoutForm.tsx`).
+
+### Product Analyst Agent
+
+`POST /api/agents/analyst` — `{ product_candidate_id: string, manual_cost?: number }`.
+Takes an existing candidate (created by the Scout Agent) and enriches it with live
+pricing data before asking Claude for a BUY-adjacent verdict:
+
+1. Sets the candidate's `status` to `'analyzing'`.
+2. Calls `getCompetitivePricing(asin)` (Product Pricing API v0, `getCompetitivePricing`
+   operation) for the Buy Box (New) price, active offer count, and sales rank.
+3. If a Buy Box price was found, calls `getFeesEstimate(asin, price, isAmazonFulfilled)`
+   (Product Fees API v0, `getMyFeesEstimateForASIN`) twice — once for FBA, once for FBM —
+   since we don't yet know the fulfillment method for a candidate that isn't listed.
+4. Calls `analyzeProductCandidate()` (`src/lib/claude-analysis.ts`) with the Scout's
+   `raw_data`, the pricing/fees results, and the manual cost (if any). Claude returns
+   the 12 tracked variables (Precio, BSR, Reviews, Rating, Competencia, Trend, Sales
+   estimate, Revenue estimate, Amazon fees, Cost, Margin, Differentiation), each tagged
+   with a confidence level (`alta | media | sin_dato`), plus a `veredicto`
+   (`test | reject | necesita_mas_datos`), `justificacion`, and `nota_metodologica`.
+   Reviews, Rating, Trend, Sales estimate, and Revenue estimate are always `sin_dato`
+   in practice — there's no Keepa (or equivalent) integration yet, so nothing feeds
+   those variables. Margin inherits the lowest confidence of Precio/Amazon fees/Cost,
+   and is `sin_dato` (with `veredicto: 'necesita_mas_datos'`) whenever price or cost is
+   missing.
+5. Updates the candidate's `status` to the verdict, merges `raw_data.analyst` (verdict +
+   raw pricing/fees results), and sets `cost_manual`/`cost_source` from the request.
+
+Logged to `agent_runs` with `agent_name: 'analyst_agent'`. UI: the "Analizar" /
+"Reanalizar" control on `/scout` (`AnalystPanel.tsx`), shown for candidates with
+`status` `pending` or `necesita_mas_datos`.
+
 ## Protected routes
 
 `src/proxy.ts` (the Next.js 16 successor to `middleware.ts` — see the breaking-changes
@@ -63,8 +108,9 @@ block at the top of this file) gates internal-only routes behind simple HTTP Bas
 checked against the `SCOUT_AUTH_USER` / `SCOUT_AUTH_PASSWORD` env vars. It fails closed:
 if those env vars aren't set, every matched route returns 401.
 
-Currently protected: `/scout` and `/api/agents/scout` (and their subpaths). To protect
-another route, add it to the `matcher` array in `src/proxy.ts` — no new auth logic needed,
+Currently protected: `/scout`, `/api/agents/scout`, and `/api/agents/analyst` (and their
+subpaths). To protect another route, add it to the `matcher` array in `src/proxy.ts` — no
+new auth logic needed,
 the same check applies to everything in the matcher. If a route needs different
 credentials or a different auth scheme, branch on `request.nextUrl.pathname` inside
 `proxy()` rather than adding a second proxy file (only one is allowed per project).

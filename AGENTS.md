@@ -85,6 +85,11 @@ para el próximo rol que hará falta).
 - El actor de Apify (`junglee/amazon-reviews-scraper`) no parsea fechas en español — el
   campo `date` siempre viene `null`, solo queda el texto crudo de `reviewedIn`. En plan
   free de Apify, cada corrida además está limitada a 10 reviews por ASIN.
+- El Product Analyst Agent ahora también llama a Apify (una vez por corrida, para las
+  variables Reviews/Rating del propio ASIN) además de la Pricing y Fees API — costo y
+  latencia adicionales por análisis, a monitorear conforme crezca el volumen de corridas.
+  No bloqueante: si Apify falla o no está configurado, el Analyst sigue funcionando igual
+  que antes de esta mejora, solo con Reviews/Rating en `sin_dato`.
 
 ### Roadmap restante
 
@@ -188,21 +193,34 @@ pricing data before asking Claude for a BUY-adjacent verdict:
 3. If a Buy Box price was found, calls `getFeesEstimate(asin, price, isAmazonFulfilled)`
    (Product Fees API v0, `getMyFeesEstimateForASIN`) twice — once for FBA, once for FBM —
    since we don't yet know the fulfillment method for a candidate that isn't listed.
-4. Calls `analyzeProductCandidate()` (`src/lib/claude-analysis.ts`) with the Scout's
-   `raw_data`, the pricing/fees results, and the manual cost (if any). Claude returns
-   the 12 tracked variables (Precio, BSR, Reviews, Rating, Competencia, Trend, Sales
-   estimate, Revenue estimate, Amazon fees, Cost, Margin, Differentiation), each tagged
-   with a confidence level (`alta | media | sin_dato`), plus a `veredicto`
-   (`test | reject | necesita_mas_datos`), `justificacion`, and `nota_metodologica`.
-   Reviews, Rating, Trend, Sales estimate, and Revenue estimate are always `sin_dato`
+4. Calls `getCompetitorReviews([asin])` (`src/lib/reviews-provider.ts` — the same Apify
+   actor used by the Review Intelligence Agent, reused here with the candidate's own ASIN
+   instead of competitor ASINs) and reduces it with `summarizeOwnProductReviews()` into
+   `{ totalRatings, totalWrittenReviews, sampledReviewCount, sampledAvgRating }`. This
+   fills Reviews and Rating instead of leaving them always `sin_dato`: Reviews =
+   `totalRatings`, confianza `'alta'` whenever available (a direct count from the product
+   page, not an estimate). Rating = `sampledAvgRating`, confianza `'media'` only if
+   `totalWrittenReviews / totalRatings >= 0.7` AND `sampledReviewCount / totalWrittenReviews
+   >= 0.7` — never `'alta'`, since it's still a partial-sample average, not Amazon's
+   official figure; `'sin_dato'` otherwise. If Apify isn't configured or this call fails
+   for any other reason, it's caught and treated as no data (`ownReviewsSummary: null`) —
+   it never fails the Analyst run.
+5. Calls `analyzeProductCandidate()` (`src/lib/claude-analysis.ts`) with the Scout's
+   `raw_data`, the pricing/fees results, `ownReviewsSummary`, and the manual cost (if
+   any). Claude returns the 12 tracked variables (Precio, BSR, Reviews, Rating,
+   Competencia, Trend, Sales estimate, Revenue estimate, Amazon fees, Cost, Margin,
+   Differentiation), each tagged with a confidence level (`alta | media | sin_dato`),
+   plus a `veredicto` (`test | reject | necesita_mas_datos`), `justificacion`, and
+   `nota_metodologica`. Trend, Sales estimate, and Revenue estimate are always `sin_dato`
    in practice — there's no Keepa (or equivalent) integration yet, so nothing feeds
    those variables. Margin inherits the lowest confidence of Precio/Amazon fees/Cost, and
    is `sin_dato` whenever price or cost is missing. `veredicto: 'necesita_mas_datos'` is
    forced not only when Margin is `sin_dato`, but also when a manual cost was provided but
    looks implausible for the product type (e.g. too low given its materials/battery/size) —
    an arithmetically valid Margin isn't trusted if its cost input isn't.
-5. Updates the candidate's `status` to the verdict, merges `raw_data.analyst` (verdict +
-   raw pricing/fees results), and sets `cost_manual`/`cost_source` from the request.
+6. Updates the candidate's `status` to the verdict, merges `raw_data.analyst` (verdict +
+   raw pricing/fees/`ownReviewsSummary` results), and sets `cost_manual`/`cost_source`
+   from the request.
 
 Logged to `agent_runs` with `agent_name: 'analyst_agent'`. UI: the "Analizar" /
 "Reanalizar" control on `/scout` (`AnalystPanel.tsx`), shown for candidates with

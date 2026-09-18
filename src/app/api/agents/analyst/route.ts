@@ -1,6 +1,11 @@
 import { NextResponse } from 'next/server';
 import { analyzeProductCandidate, type AnalystVerdict } from '@/lib/claude-analysis';
 import {
+  getCompetitorReviews,
+  summarizeOwnProductReviews,
+  type OwnProductReviewsSummary,
+} from '@/lib/reviews-provider';
+import {
   getCompetitivePricing,
   getFeesEstimate,
   SpApiError,
@@ -98,6 +103,18 @@ export async function POST(request: Request) {
       ]);
     }
 
+    let ownReviewsSummary: OwnProductReviewsSummary | null = null;
+    if (asin) {
+      try {
+        const ownReviews = await getCompetitorReviews([asin]);
+        ownReviewsSummary = summarizeOwnProductReviews(ownReviews);
+      } catch {
+        // NoReviewsSourceConfiguredError o cualquier otro fallo de Apify: tratar como
+        // "sin datos", nunca tronar el Analyst completo por esto.
+        ownReviewsSummary = null;
+      }
+    }
+
     const verdict: AnalystVerdict = await analyzeProductCandidate({
       asin: asin ?? 'sin-asin',
       title: candidate.title,
@@ -106,6 +123,7 @@ export async function POST(request: Request) {
       feesEstimateFba,
       feesEstimateFbm,
       costManual: manualCost,
+      ownReviewsSummary,
     });
 
     const existingRawData = (candidate.raw_data as Record<string, unknown> | null) ?? {};
@@ -116,6 +134,7 @@ export async function POST(request: Request) {
         competitivePricing,
         feesEstimateFba,
         feesEstimateFbm,
+        ownReviewsSummary,
         analyzedAt: new Date().toISOString(),
       },
     };

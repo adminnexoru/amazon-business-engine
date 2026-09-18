@@ -27,6 +27,8 @@ export interface CompetitorReview {
   body: string;
   reviewed_in_raw: string | null;
   verified_purchase: boolean | null;
+  total_category_ratings: number | null;
+  total_category_reviews: number | null;
 }
 
 interface ApifyReviewItem {
@@ -37,6 +39,8 @@ interface ApifyReviewItem {
   reviewDescription?: string;
   reviewedIn?: string;
   isVerified?: boolean;
+  totalCategoryRatings?: number;
+  totalCategoryReviews?: number;
 }
 
 const APIFY_ACTOR_RUN_SYNC_URL = (actorId: string) =>
@@ -84,7 +88,38 @@ async function fetchReviewsForOneAsin(
     body: raw.reviewDescription ?? '',
     reviewed_in_raw: raw.reviewedIn ?? null,
     verified_purchase: typeof raw.isVerified === 'boolean' ? raw.isVerified : null,
+    total_category_ratings:
+      typeof raw.totalCategoryRatings === 'number' ? raw.totalCategoryRatings : null,
+    total_category_reviews:
+      typeof raw.totalCategoryReviews === 'number' ? raw.totalCategoryReviews : null,
   }));
+}
+
+export interface OwnProductReviewsSummary {
+  totalRatings: number | null;
+  totalWrittenReviews: number | null;
+  sampledReviewCount: number;
+  sampledAvgRating: number | null;
+}
+
+// Resume las reviews del propio ASIN (Product Analyst Agent, mejora 2.2) para llenar las
+// variables Reviews y Rating. totalCategoryRatings/totalCategoryReviews son iguales en
+// todas las reviews de un mismo producto, así que basta leerlos del primer item.
+export function summarizeOwnProductReviews(
+  reviews: CompetitorReview[],
+): OwnProductReviewsSummary {
+  const ratedReviews = reviews.filter((r) => typeof r.rating === 'number');
+  const sampledAvgRating =
+    ratedReviews.length > 0
+      ? ratedReviews.reduce((sum, r) => sum + (r.rating as number), 0) / ratedReviews.length
+      : null;
+
+  return {
+    totalRatings: reviews[0]?.total_category_ratings ?? null,
+    totalWrittenReviews: reviews[0]?.total_category_reviews ?? null,
+    sampledReviewCount: reviews.length,
+    sampledAvgRating,
+  };
 }
 
 export async function getCompetitorReviews(asins: string[]): Promise<CompetitorReview[]> {

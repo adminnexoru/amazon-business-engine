@@ -1,7 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod';
 import { z } from 'zod';
-import type { CompetitorReview } from './reviews-provider';
+import type { CompetitorReview, OwnProductReviewsSummary } from './reviews-provider';
 import type { CompetitivePricingResult, FeesEstimate } from './sp-api';
 
 const MODEL = 'claude-sonnet-4-6';
@@ -103,6 +103,7 @@ export interface AnalystContext {
   feesEstimateFba: FeesEstimate | null;
   feesEstimateFbm: FeesEstimate | null;
   costManual: number | null;
+  ownReviewsSummary: OwnProductReviewsSummary | null;
 }
 
 const ANALYST_SYSTEM_PROMPT = `Eres el Product Analyst Agent de Amazon Business Engine. Recibes un
@@ -119,9 +120,16 @@ breve, ej. "$249.00 MXN", "12,430", "moderada — 8 vendedores activos", "sin da
 - bsr: Best Sellers Rank. Puede venir de SalesRankings de la Pricing API o de salesRanks del
   Catalog Items API (dato del Scout). confianza 'alta' si viene de cualquiera de esas dos fuentes
   reales de SP-API, 'sin_dato' si ninguna lo trae.
-- reviews: cantidad de reviews. No hay fuente disponible sin Keepa; usa 'sin_dato' salvo que el
-  catálogo traiga explícitamente un conteo.
-- rating: calificación promedio. Misma regla que reviews: 'sin_dato' salvo dato explícito del catálogo.
+- reviews: usa ownReviewsSummary.totalRatings como valor, si ownReviewsSummary no es null. Confianza
+  'alta' si totalRatings no es null — es un conteo directo de la página del producto (vía Apify),
+  no una estimación. Si totalRatings es null, o si ownReviewsSummary es null en su totalidad,
+  reviews queda 'sin_dato'.
+- rating: usa ownReviewsSummary.sampledAvgRating SOLO si se cumplen AMBAS condiciones:
+  (a) totalWrittenReviews > 0 Y (totalWrittenReviews / totalRatings) >= 0.7;
+  (b) (sampledReviewCount / totalWrittenReviews) >= 0.7.
+  Si ambas se cumplen: confianza 'media' — NUNCA 'alta', porque sigue siendo un promedio calculado
+  sobre una muestra parcial de reviews, no el promedio oficial que Amazon muestra en la página. Si
+  cualquiera de las dos condiciones falla, o ownReviewsSummary es null: rating queda 'sin_dato'.
 - competencia: nivel de competencia (alta/media/baja + por qué), combinando NumberOfOfferListings
   de la Pricing API con la apreciación cualitativa del Scout (estimated_competition). confianza
   'alta' si hay NumberOfOfferListings, 'media' si solo hay la apreciación cualitativa del Scout.
@@ -195,7 +203,10 @@ Product Fees API — estimado FBM (IsAmazonFulfilled=false):
 ${JSON.stringify(context.feesEstimateFbm, null, 2)}
 
 Costo manual ingresado por el humano (null si no se proporcionó):
-${JSON.stringify(context.costManual)}`,
+${JSON.stringify(context.costManual)}
+
+Resumen de reviews del propio ASIN vía Apify (null si no se pudo obtener):
+${JSON.stringify(context.ownReviewsSummary, null, 2)}`,
       },
     ],
     output_config: {

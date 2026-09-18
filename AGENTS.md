@@ -28,6 +28,14 @@ loop for final BUY/TEST/REJECT calls.
   Pricing API + Product Fees API (FBA y FBM). Costo manual opcional para calcular Margin.
   Veredicto: test/reject/necesita_mas_datos. Endpoint protegido igual que Scout (ver
   "Agents" más abajo para el detalle completo).
+- **Fase 2** — Review Intelligence Agent: analiza reviews de productos competidores en
+  amazon.com.mx (vía Apify, actor `junglee/amazon-reviews-scraper`) y extrae problemas
+  reportados, deseos no satisfechos, características faltantes, motivos de compra y de
+  devolución, cada ítem con su nivel de confianza (alta/media) según cuántas reviews y
+  ASINs distintos lo sustentan. Genera un PRD preliminar ("así debería ser nuestro
+  producto"). Validado end-to-end con una corrida real sobre amazon.com.mx (1 review,
+  confianza_general: sin_dato, categorías sin sustento quedaron vacías en vez de
+  inventadas). Endpoint protegido igual que Scout/Analyst (ver "Agents" más abajo).
 
 ### Variables de entorno usadas (nombres, sin valores)
 
@@ -36,8 +44,8 @@ loop for final BUY/TEST/REJECT calls.
 - SP-API (LWA): `SP_API_CLIENT_ID`, `SP_API_CLIENT_SECRET`, `SP_API_REFRESH_TOKEN`
 - Claude: `ANTHROPIC_API_KEY`
 - Basic Auth de rutas protegidas: `SCOUT_AUTH_USER`, `SCOUT_AUTH_PASSWORD`
-- Apify (Review Intelligence Agent): `APIFY_API_TOKEN`, `APIFY_REVIEWS_ACTOR_ID`
-  (`junglee~amazon-reviews-scraper`), `REVIEW_AGENT_MAX_ASINS_PER_RUN` (default `5`)
+- Apify (reviews de competidores): `APIFY_API_TOKEN`, `APIFY_REVIEWS_ACTOR_ID`
+- Límite de gasto del Review Intelligence Agent: `REVIEW_AGENT_MAX_ASINS_PER_RUN`
 
 ### Roles SP-API activos
 
@@ -65,13 +73,21 @@ para el próximo rol que hará falta).
   (`hazmat_risk` boolean).
 - Rotar `SP_API_CLIENT_SECRET` si se comparte en capturas de pantalla o chats.
 - Migrar de Basic Auth a Supabase Auth cuando haya más de un usuario.
+- Condición de carrera en `raw_data`: Scout, Analyst y Review Intelligence leen y
+  reescriben `raw_data` del mismo `product_candidate` sin lock optimista — si dos
+  corridas contra el mismo candidato se traslapan, la segunda puede sobrescribir el
+  merge de la primera. Ya existía entre Scout+Analyst; ahora hay un tercer agente
+  escribiendo al mismo campo. Arreglo correcto: función `update` atómica en Supabase
+  (o lock optimista con columna de versión), compartida por los tres — no resuelto.
+- `ourProductContext` en el Review Intelligence Agent serializa el `raw_data` completo
+  del candidato sin recortar; si un candidato acumula mucho historial, el prompt a
+  Claude crece sin límite. Verificar tamaño real con un candidato ya analizado.
+- El actor de Apify (`junglee/amazon-reviews-scraper`) no parsea fechas en español — el
+  campo `date` siempre viene `null`, solo queda el texto crudo de `reviewedIn`. En plan
+  free de Apify, cada corrida además está limitada a 10 reviews por ASIN.
 
 ### Roadmap restante
 
-- **Fase 2 — Review Intelligence Agent**: lee reviews de productos competidores (cuando
-  haya fuente de datos disponible) y extrae: problemas reportados, deseos no satisfechos,
-  características faltantes, motivos de compra, motivos de devolución. Genera un documento
-  tipo "así debería ser nuestro producto" (Product Requirement Document preliminar).
 - **Fase 3 — Supplier Agent**: busca y compara proveedores (vía plataformas como Alibaba u
   otras), compara precio/MOQ/tiempo de entrega entre opciones, calcula landed cost. Nivel
   de autonomía: 🟡 auto+aprobación en la selección final del proveedor.
@@ -120,16 +136,16 @@ Managed with the Supabase CLI under `supabase/migrations/`. Current tables (all 
 - **`agent_runs`** — execution history for every agent run.
   `id`, `created_at`, `agent_name`, `status` (default `'running'`), `input` (jsonb),
   `output` (jsonb), `error_message`, `duration_ms`.
+- **`review_insights`** — Review Intelligence Agent output per run.
+  `id`, `created_at`, `product_candidate_id` (FK → `product_candidates.id`, nullable —
+  null for standalone runs not tied to a candidate), `competitor_asins` (jsonb),
+  `status` (`pending | running | complete | error | sin_fuente_datos`), `reviews_source`,
+  `raw_reviews` (jsonb), `insights` (jsonb), `prd_document`, `confianza_general`
+  (`alta | media | sin_dato`), `nota_metodologica`, `error_message`. Restricted to
+  `service_role`, same as `product_candidates` and `agent_runs`.
 - **`decisions`** — human decisions tied to a candidate (BUY/TEST/REJECT, inventory
   approvals, etc.). `id`, `created_at`, `product_candidate_id` (FK →
   `product_candidates.id`), `decision_type`, `decision`, `notes`, `decided_by`.
-- **`review_insights`** — output of the Review Intelligence agent.
-  `id`, `created_at`, `product_candidate_id` (FK → `product_candidates.id`, nullable —
-  Modo A runs aren't linked to a candidate), `competitor_asins` (jsonb array),
-  `status` (default `'pending'`; one of
-  `pending | running | complete | error | sin_fuente_datos`), `reviews_source`,
-  `raw_reviews` (jsonb), `insights` (jsonb — the 5 categories), `prd_document`,
-  `confianza_general` (`alta | media | sin_dato`), `nota_metodologica`, `error_message`.
 
 `product_candidates`, `agent_runs`, and `review_insights` are restricted to the
 `service_role` (see "Protected routes" below for why) — all reads/writes from the app go
@@ -195,34 +211,41 @@ Logged to `agent_runs` with `agent_name: 'analyst_agent'`. UI: the "Analizar" /
 ### Review Intelligence Agent
 
 `POST /api/agents/review-intelligence` — `{ competitor_asins: string[], product_candidate_id?: string }`.
-Two modes: **Modo A** — hand-picked competitor ASINs with no linked candidate. **Modo B** —
-same, but linked to an existing `product_candidate` (its `raw_data` is passed to Claude as
-extra context for the PRD). Rejects with 400 if `competitor_asins` is empty or longer than
-`REVIEW_AGENT_MAX_ASINS_PER_RUN` (default 5).
+Reads customer reviews for one or more competitor ASINs and turns them into a
+qualitative PRD, independent of whether those ASINs are already tracked as a
+`product_candidate`:
 
-1. Calls `getCompetitorReviews(asins)` (`src/lib/reviews-provider.ts`), which hits the Apify
-   actor `junglee/amazon-reviews-scraper` once per ASIN (its free plan caps 1 URL/10 reviews
-   per run, so no batching).
+1. If `product_candidate_id` is given, fetches that candidate's `raw_data` first (404s
+   immediately if it doesn't exist) — this becomes `ourProductContext` for Claude,
+   passed as a raw JSON string.
+2. Calls `getCompetitorReviews(competitor_asins)` (`src/lib/reviews-provider.ts`), which
+   calls the Apify actor `junglee/amazon-reviews-scraper` once per ASIN (its free-plan
+   limit is 1 URL per run) and normalizes the output into `{ asin, rating, title, body,
+   reviewed_in_raw, verified_purchase }`.
    - If `APIFY_API_TOKEN`/`APIFY_REVIEWS_ACTOR_ID` aren't set, this throws
-     `NoReviewsSourceConfiguredError`: the route saves `review_insights.status: 'sin_fuente_datos'`
-     and returns 200 — this is an expected, valid state until Apify is configured, not a 500.
-   - If Apify returns zero reviews for every ASIN, the route saves `status: 'complete'`,
-     `confianza_general: 'sin_dato'`, and **does not call Claude** — never inventing an
-     analysis from no data.
-2. Otherwise, calls `analyzeCompetitorReviews()` (`src/lib/claude-analysis.ts`) with the raw
-   reviews. Claude extracts 5 categories (`problemas_reportados`, `deseos_no_satisfechos`,
-   `caracteristicas_faltantes`, `motivos_compra`, `motivos_devolucion`), each an array of
-   `{ texto, confianza: 'alta'|'media', evidencia_count }` — an item with no textual support
-   is omitted rather than fabricated. `confianza: 'alta'` requires the pattern in ≥3 reviews
-   across ≥2 distinct ASINs. Also returns `prd_document` (a "así debería ser nuestro
-   producto" markdown doc), `confianza_general`, and `nota_metodologica`.
-3. Saves the full result to `review_insights`; if `product_candidate_id` was given, also
-   merges it into that candidate's `raw_data.review_intelligence` (same pattern as
-   `raw_data.analyst`).
+     `NoReviewsSourceConfiguredError` — the route catches it, inserts a `review_insights`
+     row with `status: 'sin_fuente_datos'`, and returns without calling Claude.
+   - If Apify runs but returns zero reviews across all ASINs, the route inserts
+     `status: 'complete'`, `confianza_general: 'sin_dato'`, no `prd_document` — also
+     without calling Claude. Both are early returns, not a conditional guard around the
+     Claude call, so there's no code path where Claude sees zero reviews.
+3. Otherwise calls `analyzeCompetitorReviews()` (`src/lib/claude-analysis.ts`, same
+   client/model as the other two analysis functions, via `messages.parse` +
+   `zodOutputFormat`). Returns the 5 categories (problemas_reportados,
+   deseos_no_satisfechos, caracteristicas_faltantes, motivos_compra,
+   motivos_devolucion) as arrays of `{ texto, confianza: 'alta'|'media', evidencia_count }`
+   — the Zod schema has no `.min(1)`, so an unsupported item is simply omitted rather
+   than forced into existence with a fabricated confidence. Plus `prd_document`
+   (markdown) and `confianza_general` (`alta | media | sin_dato`).
+4. Inserts the full result into `review_insights`. If `product_candidate_id` was given,
+   merges `{ reviewInsightId, result, analyzedAt }` into that candidate's
+   `raw_data.review_intelligence` (same read-then-write pattern as the Analyst route,
+   same race condition — see "Pendientes conocidos").
 
-Logged to `agent_runs` with `agent_name: 'review_intelligence_agent'`. UI: `/review-intelligence`
-(`ReviewIntelligenceForm.tsx`) — accepts `?product_candidate_id=` to preselect a candidate,
-linked from a "Reviews →" link per row on `/scout`.
+Logged to `agent_runs` with `agent_name: 'review_intelligence_agent'`. Spend capped by
+`REVIEW_AGENT_MAX_ASINS_PER_RUN` (default 5) competitor ASINs per call. UI:
+`/review-intelligence` (`ReviewIntelligenceForm.tsx`), reachable directly or via a
+"Reviews →" link per row on `/scout` (`?product_candidate_id=...`).
 
 ## Protected routes
 

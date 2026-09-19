@@ -3,6 +3,7 @@ import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod';
 import { z } from 'zod';
 import type { CompetitorReview, OwnProductReviewsSummary } from './reviews-provider';
 import type { CompetitivePricingResult, FeesEstimate } from './sp-api';
+import type { SupplierProductOption, SupplierLead } from './supplier-provider';
 
 const MODEL = 'claude-sonnet-4-6';
 
@@ -324,6 +325,121 @@ export async function analyzeCompetitorReviews(
 
   if (!response.parsed_output) {
     throw new Error('Claude no devolvió un análisis de reviews parseable');
+  }
+
+  return response.parsed_output;
+}
+
+// --- Supplier Agent ---
+
+const supplierPriceBreakSchema = z.object({
+  minQty: z.number(),
+  maxQty: z.number().nullable(),
+  pricePerUnitUsd: z.number(),
+});
+
+const supplierOptionSchema = z.object({
+  supplierId: z.string(),
+  supplierName: z.string(),
+  priceBreaks: z.array(supplierPriceBreakSchema),
+  moq: z.number().nullable(),
+  moqUnit: z.string().nullable(),
+  // NUNCA 'alta' — el precio de un proveedor de Alibaba es un punto de partida de
+  // negociación, no una transacción cerrada (a diferencia de SP-API Pricing). El enum ni
+  // siquiera incluye la opción, para que Claude no pueda emitirla.
+  confianza_precio: z.enum(['media', 'sin_dato']),
+  senales_confianza_proveedor: z.string(),
+  landed_cost_parcial: z.object({
+    unit_price_usd: z.number(),
+    amazon_fees_mxn: z.number().nullable(),
+    total_parcial_mxn: z.number().nullable(),
+    es_parcial: z.literal(true),
+  }),
+});
+
+export const supplierSearchAnalysisSchema = z.object({
+  status: z.enum(['complete', 'sin_dato']),
+  opciones: z.array(supplierOptionSchema),
+  nota_metodologica: z.string(),
+});
+
+export type SupplierSearchAnalysisResult = z.infer<typeof supplierSearchAnalysisSchema>;
+
+export interface SupplierFeesContext {
+  fbaFeesMxn: number | null;
+  fbmFeesMxn: number | null;
+}
+
+const SUPPLIER_AGENT_SYSTEM_PROMPT = `Eres un analista de sourcing para un negocio que vende en Amazon México.
+Tu tarea es comparar opciones de proveedores reales (de Alibaba) para un producto
+ya validado como candidato de venta, y presentar una comparación clara para que
+un humano decida con cuál proveedor avanzar. TÚ NO ELIGES, solo comparas.
+
+REGLAS ESTRICTAS:
+
+1. El precio de un proveedor NUNCA lleva confianza "alta" — es un punto de partida
+   de negociación en Alibaba, no una transacción cerrada. Máximo: "media". Si algún
+   dato de precio falta o es inconsistente, usa "sin_dato" para esa opción.
+
+2. El landed cost SIEMPRE se marca como parcial (es_parcial: true) — se calcula
+   como precio unitario + fees de Amazon ya conocidos, SIN flete ni aranceles
+   (no hay fuente de datos para eso en esta fase). No lo presentes como costo
+   total real bajo ninguna circunstancia.
+
+   El precio del proveedor viene en USD (Alibaba) y los fees de Amazon en MXN. NO
+   tienes una tasa de cambio confiable — NUNCA sumes unit_price_usd + amazon_fees_mxn
+   directamente como si fueran la misma moneda, eso produciría un número sin sentido.
+   total_parcial_mxn debe quedar en null salvo que tengas una forma válida de expresar
+   ambos montos en la misma moneda (no la tienes en esta fase): dejarlo en null y
+   reportar unit_price_usd y amazon_fees_mxn por separado es preferible a un total
+   fabricado.
+
+3. NUNCA inventes una opción sin datos reales detrás. Si hay menos de 2 leads de
+   proveedor utilizables, responde con status "sin_dato" y un array de opciones
+   vacío — no rellenes hasta llegar a 2.
+
+4. Elige como máximo 4 opciones de las disponibles, priorizando por leadScore si
+   existe. No expliques por qué elegiste esas — solo compáralas.
+
+5. senales_confianza_proveedor debe describir lo que la fuente SÍ reporta (años en
+   Alibaba, verificado, trade assurance, tasa de entrega a tiempo) sin inventar
+   un score propio que oculte de dónde viene cada señal.
+
+6. nota_metodologica: describe brevemente cuántos leads de proveedor se recibieron,
+   cuántas opciones se compararon y cualquier limitación relevante (p.ej. leadTimes
+   no disponible, landed cost parcial sin flete/aranceles).`;
+
+// Recibe los productos y leads de proveedor crudos (Apify) + los fees de Amazon ya
+// conocidos del candidato (Analyst) y devuelve la comparación estructurada que se guarda
+// en supplier_searches.options.
+export async function analyzeSupplierOptions(
+  products: SupplierProductOption[],
+  leads: SupplierLead[],
+  ourFeesContext: SupplierFeesContext,
+): Promise<SupplierSearchAnalysisResult> {
+  const response = await client.messages.parse({
+    model: MODEL,
+    max_tokens: 3000,
+    system: SUPPLIER_AGENT_SYSTEM_PROMPT,
+    messages: [
+      {
+        role: 'user',
+        content: `Productos y proveedores encontrados (Apify, scrapesage/alibaba-scraper):
+${JSON.stringify({ products, leads }, null, 2)}
+
+Fees de Amazon ya conocidos para este candidato (Product Analyst Agent):
+${JSON.stringify(ourFeesContext, null, 2)}
+
+Compara y responde siguiendo exactamente las reglas del system prompt.`,
+      },
+    ],
+    output_config: {
+      format: zodOutputFormat(supplierSearchAnalysisSchema),
+    },
+  });
+
+  if (!response.parsed_output) {
+    throw new Error('Claude no devolvió una comparación de proveedores parseable');
   }
 
   return response.parsed_output;

@@ -46,6 +46,8 @@ loop for final BUY/TEST/REJECT calls.
 - Basic Auth de rutas protegidas: `SCOUT_AUTH_USER`, `SCOUT_AUTH_PASSWORD`
 - Apify (reviews de competidores): `APIFY_API_TOKEN`, `APIFY_REVIEWS_ACTOR_ID`
 - Límite de gasto del Review Intelligence Agent: `REVIEW_AGENT_MAX_ASINS_PER_RUN`
+- Apify (proveedores, Supplier Agent): `APIFY_SUPPLIER_ACTOR_ID`
+  (`scrapesage~alibaba-scraper`; reutiliza `APIFY_API_TOKEN`)
 
 ### Roles SP-API activos
 
@@ -151,10 +153,21 @@ Managed with the Supabase CLI under `supabase/migrations/`. Current tables (all 
 - **`decisions`** — human decisions tied to a candidate (BUY/TEST/REJECT, inventory
   approvals, etc.). `id`, `created_at`, `product_candidate_id` (FK →
   `product_candidates.id`), `decision_type`, `decision`, `notes`, `decided_by`.
+- **`supplier_searches`** — Supplier Agent output per run. Unlike `review_insights`,
+  `product_candidate_id` is a required FK (`not null`, `on delete cascade`) — the Supplier
+  Agent has no standalone mode, it only runs on a candidate with veredicto `test`.
+  `id`, `created_at`, `product_candidate_id`, `search_query` (jsonb; `searchTerms` actually
+  used), `status` (`pending | running | complete | error | sin_fuente_datos`),
+  `raw_results` (jsonb; raw Apify snapshot — products + supplier leads), `options` (jsonb;
+  Claude's normalized 0-4 option comparison), `nota_metodologica`, `error_message`,
+  `selected_supplier_id`, `selected_at` (the user's choice among the presented options —
+  recording it triggers no other action). Restricted to `service_role`, same as the other
+  agent tables.
 
-`product_candidates`, `agent_runs`, and `review_insights` are restricted to the
-`service_role` (see "Protected routes" below for why) — all reads/writes from the app go
-through `src/lib/supabase-admin.ts` server-side, never the `anon` client, for these tables.
+`product_candidates`, `agent_runs`, `review_insights`, and `supplier_searches` are
+restricted to the `service_role` (see "Protected routes" below for why) — all reads/writes
+from the app go through `src/lib/supabase-admin.ts` server-side, never the `anon` client,
+for these tables.
 
 ## Migrations convention
 
@@ -265,6 +278,53 @@ Logged to `agent_runs` with `agent_name: 'review_intelligence_agent'`. Spend cap
 `/review-intelligence` (`ReviewIntelligenceForm.tsx`), reachable directly or via a
 "Reviews →" link per row on `/scout` (`?product_candidate_id=...`).
 
+### Supplier Agent
+
+`POST /api/agents/supplier` — `{ product_candidate_id: string }`. Finds and compares
+supplier options (via Apify, actor `scrapesage/alibaba-scraper`) for a candidate the
+Product Analyst Agent already validated:
+
+1. Fetches the candidate. 404 if it doesn't exist.
+2. Reads `raw_data.analyst.verdict.veredicto`. If it isn't exactly `'test'`, returns 422
+   with an explicit message and does **not** create an `agent_runs` row — a rejection here
+   isn't logged as a supplier-search attempt, per spec.md.
+3. Builds a single search term from `raw_data.catalog.summaries[0].itemName` (falling back
+   to the candidate's `title`) — no manual keyword input in v1.
+4. Calls `getSupplierOptions(searchTerms)` (`src/lib/supplier-provider.ts`), which calls
+   the Apify actor once and splits the dataset into `products` (price, MOQ, ladder prices,
+   packaging, `leadTimeDays` — confirmed always `null` in practice) and `leads`
+   (per-supplier trust signals: verified, trade assurance, years on Alibaba, lead score).
+   - If `APIFY_API_TOKEN`/`APIFY_SUPPLIER_ACTOR_ID` aren't set, this throws
+     `NoSupplierSourceConfiguredError` — the route catches it, inserts a
+     `supplier_searches` row with `status: 'sin_fuente_datos'`, and returns without
+     calling Claude.
+   - If fewer than 2 distinct supplier leads come back, the route inserts
+     `status: 'complete'`, `options: []`, and a `nota_metodologica` explaining why — also
+     without calling Claude, same early-return pattern as Review Intelligence: never pad
+     a comparison up to 2 options with invented data.
+5. Otherwise calls `analyzeSupplierOptions()` (`src/lib/claude-analysis.ts`, same
+   client/model/`messages.parse` + `zodOutputFormat` pattern as the other three analysis
+   functions) with the products, leads, and the candidate's already-known Amazon fees
+   (`raw_data.analyst.feesEstimateFba`/`feesEstimateFbm`). Returns up to 4 options, each
+   with `priceBreaks`, `moq`, `confianza_precio` (`'media' | 'sin_dato'` — the Zod enum
+   doesn't even include `'alta'`, since a supplier's Alibaba price is a negotiation
+   starting point, never a closed transaction), `senales_confianza_proveedor` (a summary
+   of what the source actually reports, not a fabricated single score), and
+   `landed_cost_parcial` (`unit_price_usd` + known Amazon fees, `es_parcial: true` always
+   — it never includes freight or duties, no estimation source exists for those yet).
+6. Inserts the result into `supplier_searches`. Unlike Review Intelligence, this does
+   **not** merge into the candidate's `raw_data` — sourcing can be re-run multiple times
+   over the same candidate as supplier pricing changes, so each run gets its own row
+   instead of overwriting a merged field (see plan.md, "Decisiones y su razón").
+
+`PATCH /api/agents/supplier/[id]/select` — `{ selected_supplier_id: string }`. Records
+which option the user picked (`selected_supplier_id`, `selected_at`) on an existing
+`supplier_searches` row; 400 if that ID isn't among the row's saved `options`. Triggers no
+other action — no RFQ, no contact, no `raw_data` merge.
+
+Logged to `agent_runs` with `agent_name: 'supplier_agent'`. Endpoint protected same as
+Scout/Analyst/Review Intelligence.
+
 ## Protected routes
 
 `src/proxy.ts` (the Next.js 16 successor to `middleware.ts` — see the breaking-changes
@@ -273,7 +333,8 @@ checked against the `SCOUT_AUTH_USER` / `SCOUT_AUTH_PASSWORD` env vars. It fails
 if those env vars aren't set, every matched route returns 401.
 
 Currently protected: `/scout`, `/api/agents/scout`, `/api/agents/analyst`,
-`/review-intelligence`, and `/api/agents/review-intelligence` (and their subpaths). To
+`/review-intelligence`, `/api/agents/review-intelligence`, and `/api/agents/supplier` (and
+their subpaths). To
 protect another route, add it to the `matcher` array in `src/proxy.ts` — no new auth logic
 needed, the same check applies to everything in the matcher. If a route needs different
 credentials or a different auth scheme, branch on `request.nextUrl.pathname` inside

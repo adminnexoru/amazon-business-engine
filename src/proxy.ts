@@ -15,6 +15,8 @@ export const config = {
     '/review-intelligence/:path*',
     '/api/agents/review-intelligence',
     '/api/agents/review-intelligence/:path*',
+    '/api/agents/supplier',
+    '/api/agents/supplier/:path*',
   ],
 };
 

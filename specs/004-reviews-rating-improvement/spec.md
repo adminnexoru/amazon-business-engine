@@ -48,6 +48,10 @@ reutilizar la ya validada.
 - [x] El resultado se guarda en una sola escritura a `raw_data.analyst`
       (no duplica el riesgo de condición de carrera ya documentado en
       Fase 2).
-- [ ] Validar con un ASIN real en producción que las reglas de umbral
-      (0.7 / 0.7) producen el resultado esperado — pendiente al pausar el
-      trabajo de esta mejora.
+- [x] Validar con un ASIN real en producción que las reglas de umbral
+      (0.7 / 0.7) producen el resultado esperado. Confirmado para la rama
+      `sin_dato` (ver T8 en tasks.md — `product_candidate_id`
+      c569d3b3-8402-464a-a4c6-1ddc6cb71036, ASIN B077HFMK1Z: Reviews
+      `alta`, Rating `sin_dato` por fallar ambas condiciones de umbral).
+      La rama `media` de Rating sigue sin validar con datos reales — ver
+      T13 en tasks.md.

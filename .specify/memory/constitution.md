@@ -52,3 +52,7 @@
     🟡 autónomo + aprobación humana (selección de proveedor, pagos, cambios
     grandes de presupuesto), 🔴 solo humano (transferencias, contratos,
     compras grandes de inventario). Nunca se automatiza un nivel 🔴.
+
+---
+
+**Version**: 1.0.0 | **Ratified**: 2026-09-19 | **Last Amended**: 2026-09-23

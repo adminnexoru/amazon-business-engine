@@ -554,3 +554,79 @@ export async function generatePoTemplate(
 
   return response.parsed_output;
 }
+
+// --- Listing Agent ---
+
+const listingDraftSchema = z.object({
+  title: z.string(),
+  bullets: z.array(z.string()),
+  description: z.string(),
+  itemHighlights: z.string(),
+  backendSearchTerms: z.array(z.string()),
+  missingElements: z.array(z.string()),
+  aPlusContent: z.array(
+    z.object({
+      tema: z.string(),
+      contenidoEsperado: z.string(),
+    }),
+  ),
+});
+
+export type ListingDraftResult = z.infer<typeof listingDraftSchema>;
+
+const LISTING_DRAFT_SYSTEM_PROMPT = `Eres el Listing Agent de Amazon Business Engine. Recibes los
+datos ya guardados de un candidato de producto (catálogo del Scout, análisis del Product Analyst,
+insights de reviews si existen) y generas una propuesta de listing optimizado para Amazon México.
+
+Reglas:
+(a) Basa todo el contenido ÚNICAMENTE en los datos que recibes (catálogo, análisis, analyst,
+    review_intelligence si están presentes). Nunca inventes atributos, certificaciones ni
+    afirmaciones del producto que no estén sustentadas en esos datos.
+(b) Cuando falte un dato necesario para generar un elemento del listing con confianza,
+    agrégalo como texto breve a "missingElements" en vez de generar ese elemento igual con
+    contenido inventado o genérico.
+(c) "bullets" debe tener al menos 5 elementos.
+(d) Incluye la propuesta de A+ Content ("aPlusContent") en esta misma respuesta: cada módulo
+    con su "tema" y una descripción breve de "contenidoEsperado".
+(e) Respeta estos límites reales de Amazon (2026) al redactar cada campo — quedarte corto es
+    preferible a arriesgarte a pasarte:
+    - "title": máximo 75 caracteres, incluyendo espacios.
+    - cada elemento de "bullets": máximo 255 caracteres.
+    - "backendSearchTerms": el conjunto completo de términos no debe superar 249 bytes en
+      total (no por término individual) — si te pasas, Amazon descarta el campo completo en
+      silencio, no lo trunca. Usa términos separados por espacio, sin comas ni palabras que ya
+      aparezcan en el título o los bullets.
+(f) "itemHighlights" es un campo nuevo y distinto del título (máximo 125 caracteres) — es
+    contenido COMPLEMENTARIO, nunca una repetición del título o los bullets. Amazon introdujo
+    este campo junto con el límite de 75 caracteres del título precisamente para dar espacio al
+    contenido que el título recortado ya no puede llevar: úsalo para eso, no para repetir lo que
+    ya dice el título.
+
+Responde solo con JSON: { "title": string, "bullets": string[], "description": string,
+"itemHighlights": string, "backendSearchTerms": string[], "missingElements": string[],
+"aPlusContent": { "tema": string, "contenidoEsperado": string }[] }`;
+
+// Recibe el raw_data completo del candidato (catalog/analysis/analyst/review_intelligence) y
+// devuelve el Listing Draft que se guarda en listing_drafts.
+export async function generateListingDraft(candidateRawData: unknown): Promise<ListingDraftResult> {
+  const response = await client.messages.parse({
+    model: MODEL,
+    max_tokens: 2500,
+    system: LISTING_DRAFT_SYSTEM_PROMPT,
+    messages: [
+      {
+        role: 'user',
+        content: `Datos del candidato (raw_data completo):\n${JSON.stringify(candidateRawData, null, 2)}\n\nGenera el listing siguiendo exactamente las reglas del system prompt.`,
+      },
+    ],
+    output_config: {
+      format: zodOutputFormat(listingDraftSchema),
+    },
+  });
+
+  if (!response.parsed_output) {
+    throw new Error('Claude no devolvió un Listing Draft parseable');
+  }
+
+  return response.parsed_output;
+}

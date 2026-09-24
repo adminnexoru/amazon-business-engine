@@ -23,6 +23,8 @@ export const config = {
     '/api/agents/procurement/po/:path*',
     '/api/agents/buy-simulator',
     '/api/agents/buy-simulator/:path*',
+    '/api/agents/listing',
+    '/api/agents/listing/:path*',
   ],
 };
 

@@ -159,11 +159,11 @@ confianza calculado de forma determinística.
 
 ### Implementation for User Story 2
 
-- [ ] T011 [P] [US2] Agregar la validación de `competitor_asins` en
+- [X] T011 [P] [US2] Agregar la validación de `competitor_asins` en
       `src/app/api/agents/listing/route.ts`: acepta de 0 a 10 strings (FR-004); 400 si
       trae más de 10 o si algún elemento no cumple el patrón de ASIN ya usado en
       `src/lib/sp-api.ts` (`isAsin()`).
-- [ ] T011b [P] [US2] En el mismo validador de `route.ts` (antes de crear la fila en
+- [X] T011b [P] [US2] En el mismo validador de `route.ts` (antes de crear la fila en
       `agent_runs`), rechazar con 400 explícito si el body incluye cualquiera de estas
       keys relacionadas a PPC/Advertising: `manage_ppc`, `bids`, `campaign_id`,
       `acos_target`, `ppc` — mensaje exacto de FR-011: "PPC/Advertising está fuera de
@@ -172,18 +172,18 @@ confianza calculado de forma determinística.
       reporte de `/speckit-analyze`. Nota: esta validación aplica a cualquier request a
       este endpoint, no solo a los que traen `competitor_asins` — se agrupa aquí junto a
       T011 por ser la otra validación de body, no porque dependa de US2.
-- [ ] T012 [US2] Implementar, dentro de `route.ts`, el loop de resolución de
+- [X] T012 [US2] Implementar, dentro de `route.ts`, el loop de resolución de
       competidores reutilizando `getCatalogItem(asin)` de `src/lib/sp-api.ts` **sin
       modificar ese archivo** (plan.md, Project Structure): capturar `SpApiError` por
       cada ASIN individualmente sin abortar el loop, acumulando
       `competitorAsinsResolved` (los que sí devolvieron catálogo) vs.
       `competitorAsinsRequested` (FR-009). (depende de T011)
-- [ ] T013 [US2] Aplicar la regla de research.md Decisión 3 en `route.ts`: si
+- [X] T013 [US2] Aplicar la regla de research.md Decisión 3 en `route.ts`: si
       `competitor_asins.length >= 1` y `competitorAsinsResolved.length === 0`, fijar
       `comparison.status = 'sin_fuente_datos'` y saltar la llamada a Claude de
       comparación — el Listing Draft de US1 (T009/T010) se sigue entregando igual en la
       misma respuesta (FR-016). (depende de T012)
-- [ ] T014 [P] [US2] Definir `listingComparisonSchema` (Zod) en
+- [X] T014 [P] [US2] Definir `listingComparisonSchema` (Zod) en
       `src/lib/claude-analysis.ts`: `keywordGaps`, `missingAttributes`,
       `structuralDifferences` — cada uno `z.array(z.object({ texto: z.string(),
       asinsSustento: z.array(z.string()) }))` — mismos nombres que
@@ -195,7 +195,7 @@ confianza calculado de forma determinística.
       Zod→HTTP; `data-model.md` queda con esa inconsistencia menor sin corregir, fuera
       del alcance de este ajuste). **NO** incluir un campo `confianza` en este schema —
       Claude nunca calcula el porcentaje (research.md, Decisión 2).
-- [ ] T015 [US2] Escribir el system prompt de comparación en
+- [X] T015 [US2] Escribir el system prompt de comparación en
       `src/lib/claude-analysis.ts` (constante `LISTING_COMPARISON_SYSTEM_PROMPT`) que
       instruye explícitamente: (a) basar cada gap únicamente en los datos de catálogo
       reales de los competidores resueltos (nunca inventar); (b) para
@@ -204,18 +204,18 @@ confianza calculado de forma determinística.
       `getCatalogItem()` para ningún ASIN (research.md, Decisión 6); (c) por cada gap,
       listar en `asins_sustento` exactamente qué ASINs competidores lo sustentan, sin
       calcular ningún porcentaje ni nivel de confianza. (depende de T014)
-- [ ] T016 [US2] Implementar `compareListingToCompetitors(listingDraft:
+- [X] T016 [US2] Implementar `compareListingToCompetitors(listingDraft:
       ListingDraftResult, competitorCatalogData: unknown[]):
       Promise<ListingComparisonResult>` en `src/lib/claude-analysis.ts`, mismo patrón
       `messages.parse` + `zodOutputFormat`. (depende de T014, T015)
-- [ ] T017 [US2] Implementar el cálculo determinístico de confianza como función pura en
+- [X] T017 [US2] Implementar el cálculo determinístico de confianza como función pura en
       `src/lib/claude-analysis.ts` (o `src/lib/listing-comparison-confidence.ts`, a
       decidir en implementación): para cada gap, `confianza = 'alta'` si
       `asins_sustento.length / competitorAsinsResolved.length >= 0.7`; `'media'` si el
       cociente es `> 0` y `< 0.7`; `'sin_dato'` si `asins_sustento` queda vacío o el gap
       no es comparable (FR-014, research.md Decisión 2) — **no** se calcula dentro del
       prompt de T015. (depende de T016)
-- [ ] T018 [US2] En `src/app/api/agents/listing/route.ts`, integrar T012-T017 en el
+- [X] T018 [US2] En `src/app/api/agents/listing/route.ts`, integrar T012-T017 en el
       flujo completo: si `competitor_asins` viene vacío u omitido, `comparison: null`
       sin llamar a Claude en absoluto (FR-004, Clarifications Q2); si no, ejecutar
       T012→T013→T016→T017 y hacer `upsert` de los campos de comparación en la misma fila

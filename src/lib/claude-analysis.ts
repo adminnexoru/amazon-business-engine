@@ -630,3 +630,67 @@ export async function generateListingDraft(candidateRawData: unknown): Promise<L
 
   return response.parsed_output;
 }
+
+const listingComparisonItemSchema = z.object({
+  texto: z.string(),
+  asinsSustento: z.array(z.string()),
+});
+
+const listingComparisonSchema = z.object({
+  keywordGaps: z.array(listingComparisonItemSchema),
+  missingAttributes: z.array(listingComparisonItemSchema),
+  structuralDifferences: z.array(listingComparisonItemSchema),
+  notaMetodologica: z.string(),
+});
+
+export type ListingComparisonResult = z.infer<typeof listingComparisonSchema>;
+
+const LISTING_COMPARISON_SYSTEM_PROMPT = `Eres el Listing Agent de Amazon Business Engine, en su
+función de comparar un Listing Draft propio contra datos de catálogo reales de productos
+competidores en Amazon México.
+
+Reglas estrictas:
+1. Basa cada gap ÚNICAMENTE en los datos de catálogo reales de los competidores resueltos que se
+   te dan — nunca inventes un gap sin sustento textual/estructural real.
+2. "structuralDifferences" está limitado a lo que los datos de catálogo realmente exponen:
+   cantidad de bullets y cantidad de imágenes. Está PROHIBIDO reportar presencia o ausencia de
+   A+ Content / Enhanced Brand Content como diferencia de estructura — ese dato no existe en la
+   fuente de datos disponible para ningún ASIN, propio ni competidor.
+3. Por cada gap (en "keywordGaps", "missingAttributes" o "structuralDifferences"), lista en
+   "asinsSustento" exactamente qué ASINs competidores lo sustentan. NO calcules ningún
+   porcentaje ni nivel de confianza — eso se calcula fuera de esta llamada.
+4. "notaMetodologica": describe brevemente cuántos competidores se compararon y cualquier
+   limitación relevante (p. ej. atributos no comparables, datos de catálogo incompletos).
+
+Responde solo con JSON: { "keywordGaps": {texto, asinsSustento}[], "missingAttributes":
+{texto, asinsSustento}[], "structuralDifferences": {texto, asinsSustento}[], "notaMetodologica":
+string }`;
+
+// Recibe el Listing Draft propio y los datos de catálogo de los competidores ya resueltos, y
+// devuelve la comparación cruda (sin nivel de confianza — eso se calcula de forma determinística
+// fuera de esta función, ver src/lib/listing-comparison-confidence.ts).
+export async function compareListingToCompetitors(
+  listingDraft: ListingDraftResult,
+  competitorCatalogData: unknown[],
+): Promise<ListingComparisonResult> {
+  const response = await client.messages.parse({
+    model: MODEL,
+    max_tokens: 3000,
+    system: LISTING_COMPARISON_SYSTEM_PROMPT,
+    messages: [
+      {
+        role: 'user',
+        content: `Listing Draft propio:\n${JSON.stringify(listingDraft, null, 2)}\n\nDatos de catálogo de competidores resueltos:\n${JSON.stringify(competitorCatalogData, null, 2)}\n\nCompara siguiendo exactamente las reglas del system prompt.`,
+      },
+    ],
+    output_config: {
+      format: zodOutputFormat(listingComparisonSchema),
+    },
+  });
+
+  if (!response.parsed_output) {
+    throw new Error('Claude no devolvió una comparación de listing parseable');
+  }
+
+  return response.parsed_output;
+}

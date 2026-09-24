@@ -17,6 +17,12 @@ export const config = {
     '/api/agents/review-intelligence/:path*',
     '/api/agents/supplier',
     '/api/agents/supplier/:path*',
+    '/api/agents/procurement/rfq',
+    '/api/agents/procurement/rfq/:path*',
+    '/api/agents/procurement/po',
+    '/api/agents/procurement/po/:path*',
+    '/api/agents/buy-simulator',
+    '/api/agents/buy-simulator/:path*',
   ],
 };
 

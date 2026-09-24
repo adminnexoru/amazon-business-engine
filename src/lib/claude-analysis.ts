@@ -444,3 +444,113 @@ Compara y responde siguiendo exactamente las reglas del system prompt.`,
 
   return response.parsed_output;
 }
+
+// --- Procurement Agent ---
+
+const rfqDraftSchema = z.object({
+  asunto: z.string(),
+  cuerpo: z.string(),
+  campos_solicitados: z.array(z.string()),
+});
+
+export type RfqDraftResult = z.infer<typeof rfqDraftSchema>;
+
+const RFQ_SYSTEM_PROMPT = `Eres un asistente de compras B2B para un negocio mexicano que
+importa productos desde China para vender en Amazon México.
+
+Tu tarea es redactar un RFQ (Request for Quotation) profesional EN INGLÉS —
+los proveedores de Alibaba operan predominantemente en inglés — dirigido al
+proveedor ya elegido, a partir de las specs del producto (que pueden venir
+en español; tradúcelas al armar el mensaje, no las copies tal cual) y de los
+datos ya vistos en Alibaba (precio de referencia, MOQ, price breaks).
+
+REGLAS:
+1. El mensaje debe pedir EXPLÍCITAMENTE que el proveedor cotice: precio final
+   confirmado a la cantidad de referencia, costo de flete a México, tiempo
+   de entrega (producción + envío), y condiciones de pago aceptadas.
+2. Debe dejar claro que el precio visto en Alibaba es una referencia inicial,
+   pidiendo confirmación formal — nunca lo trates como un precio ya acordado.
+3. Tono profesional, directo, sin comprometerse a comprar — es una solicitud
+   de cotización, no una confirmación de orden.
+4. NO inventes datos del producto que no estén en la información que se te
+   da — si falta un dato relevante, simplemente no lo incluyas en el mensaje
+   en vez de rellenarlo.
+
+Responde solo con JSON: { "asunto": string, "cuerpo": string, "campos_solicitados": string[] }`;
+
+// Recibe las specs del producto (raw_data.catalog del candidato) y la opción de
+// proveedor ya seleccionada (dentro de supplier_searches.options) y devuelve el RFQ
+// que se guarda en procurement_documents (document_type: 'rfq').
+export async function generateRfqDraft(
+  productSpecs: unknown,
+  selectedOption: unknown,
+): Promise<RfqDraftResult> {
+  const response = await client.messages.parse({
+    model: MODEL,
+    max_tokens: 1500,
+    system: RFQ_SYSTEM_PROMPT,
+    messages: [
+      {
+        role: 'user',
+        content: `Specs del producto:\n${JSON.stringify(productSpecs, null, 2)}\n\nOpción de proveedor elegida:\n${JSON.stringify(selectedOption, null, 2)}\n\nRedacta el RFQ siguiendo las reglas del system prompt.`,
+      },
+    ],
+    output_config: {
+      format: zodOutputFormat(rfqDraftSchema),
+    },
+  });
+
+  if (!response.parsed_output) {
+    throw new Error('Claude no devolvió un RFQ parseable');
+  }
+
+  return response.parsed_output;
+}
+
+const poTemplateSchema = z.object({
+  asunto: z.string(),
+  cuerpo: z.string(),
+});
+
+export type PoTemplateResult = z.infer<typeof poTemplateSchema>;
+
+const PO_SYSTEM_PROMPT = `Genera una plantilla de orden de compra (Purchase Order) EN INGLÉS,
+a partir de una cantidad y precio YA CONFIRMADOS MANUALMENTE por el usuario
+(no del listado original de Alibaba). Incluye: item, cantidad, precio
+unitario acordado, condiciones de pago, lugar de entrega, y una nota
+explícita y visible de que este documento es una PLANTILLA DE REFERENCIA,
+NO un documento legal vinculante ni una transacción real.
+
+Responde solo con JSON: { "asunto": string, "cuerpo": string }`;
+
+// Recibe la cantidad y precio unitario YA CONFIRMADOS por el humano tras recibir la
+// respuesta real del proveedor (no los toma del listado original de Alibaba) y devuelve
+// la plantilla de PO que se guarda en procurement_documents (document_type: 'po').
+export async function generatePoTemplate(
+  productSpecs: unknown,
+  supplierName: string,
+  quantity: number,
+  unitPriceUsd: number,
+  notes?: string,
+): Promise<PoTemplateResult> {
+  const response = await client.messages.parse({
+    model: MODEL,
+    max_tokens: 1000,
+    system: PO_SYSTEM_PROMPT,
+    messages: [
+      {
+        role: 'user',
+        content: `Producto:\n${JSON.stringify(productSpecs, null, 2)}\n\nProveedor: ${supplierName}\nCantidad confirmada: ${quantity}\nPrecio unitario confirmado (USD): ${unitPriceUsd}\nNotas: ${notes ?? '(ninguna)'}`,
+      },
+    ],
+    output_config: {
+      format: zodOutputFormat(poTemplateSchema),
+    },
+  });
+
+  if (!response.parsed_output) {
+    throw new Error('Claude no devolvió una PO parseable');
+  }
+
+  return response.parsed_output;
+}

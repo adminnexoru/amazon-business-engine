@@ -237,12 +237,17 @@ incluir `listing.aPlusContent` con al menos 1 módulo.
 
 ### Implementation for User Story 3
 
-- [ ] T019 [US3] Validar que el campo `aPlusContent` generado por T006-T008 (misma
+- [X] T019 [US3] Validar que el campo `aPlusContent` generado por T006-T008 (misma
       llamada a Claude que US1, por decisión de diseño explícita en research.md Decisión
       4 — no hay una función ni un endpoint separado para esta historia) se expone
       correctamente en la respuesta de `route.ts` con al menos 1 módulo (`tema` +
       `contenidoEsperado`) para un candidato con datos de catálogo completos. Si falta
       algo, el ajuste va en el prompt de T007, no en código nuevo. (depende de T010)
+      **Evidencia** (confirmación formal, ya observado en la primera corrida de US1):
+      candidato `e5d485e3-...`, `listing.aPlusContent` con 5 módulos, cada uno con
+      `tema` y `contenidoEsperado` poblados (ej. "Historia de marca y propuesta de
+      valor", "Especificaciones técnicas visuales"). Reconfirmado en Escenario 1 de
+      `quickstart.md` durante T022 (5 bullets, `comparison: null`, corrida exitosa).
 
 **Checkpoint**: Las 3 user stories funcionales — `quickstart.md` Escenario 1 confirma
 US1 y US3 en la misma corrida.
@@ -254,18 +259,45 @@ US1 y US3 en la misma corrida.
 **Purpose**: Documentación y validación final, consistente con cómo se cerraron las
 Fases 1-4 de este mismo repo.
 
-- [ ] T020 [P] Documentar el Listing Agent en `AGENTS.md`: nueva subsección bajo
+- [X] T020 [P] Documentar el Listing Agent en `AGENTS.md`: nueva subsección bajo
       `## Agents` (mismo nivel de detalle que Scout/Analyst/Review
       Intelligence/Supplier/Procurement/Buy Simulator), agregar `listing_drafts` a
       `## Database schema`, y agregar la nueva ruta a la lista de `## Protected routes`.
-- [ ] T021 Correr `npx tsc --noEmit`, `npm run lint` y `npm run build` y confirmar que
+      **Evidencia**: sección "Listing Agent" agregada después de "Buy Simulator";
+      `listing_drafts` documentada en Database schema con sus 17 columnas; ruta agregada
+      a la lista de Protected routes. Diff completo entregado como Doc aparte.
+- [X] T021 Correr `npx tsc --noEmit`, `npm run lint` y `npm run build` y confirmar que
       los tres pasan limpio (mismo gate usado para cerrar las Fases 1-4).
-- [ ] T022 Correr los 5 escenarios de `specs/008-listing-agent/quickstart.md` contra un
+      **Evidencia**: los 3 comandos corrieron limpio con el código completo de US1+US2+
+      documentación de AGENTS.md ya en el árbol — `tsc` sin output (0 errores), `eslint`
+      sin warnings, `next build` compiló y generó las 12 rutas incluyendo
+      `/api/agents/listing`.
+- [X] T022 Correr los 5 escenarios de `specs/008-listing-agent/quickstart.md` contra un
       candidato real (ver candidatos de ejemplo ya listados ahí:
       `c569d3b3-8402-464a-a4c6-1ddc6cb71036` o
       `e5d485e3-b4e4-4eab-af8f-f1df2d98a0c4`) y confirmar en Supabase que cada corrida
       exitosa deja una fila en `agent_runs` con `agent_name: 'listing_agent'`
       (Principio 7 de la constitución).
+      **Evidencia** (corrida de punta a punta, servidor local — no producción, porque
+      esta fase todavía no está comiteada/desplegada; candidato `e5d485e3-...` para
+      Escenarios 1/2/4/5, candidato de prueba `b203e63f-4ada-4b3d-a20a-4658532bbde1`
+      —creado a mano sin `raw_data.catalog`— para Escenario 3):
+      - Escenario 1: `200`, 5 bullets, `comparison: null`.
+      - Escenario 2 (competidores reales de auriculares B07WS4XY5F/B0BRR6XR2Q/
+        B0CPSFC67G): `200`, `status: complete`, 3/3 resueltos, 7 keyword gaps con
+        confianza `alta`/`media` correctamente distribuida (10 ítems `alta`, 9 `media`
+        en total entre las 3 categorías).
+      - Escenario 3: `422` con mensaje explícito; confirmado que NO se creó fila en
+        `agent_runs` para esa llamada (el timestamp inmediatamente anterior y posterior
+        en `agent_runs` no dejan hueco para ella).
+      - Escenario 4: `200`; `listing_drafts` sigue con 1 sola fila
+        (`f1c7d565-fe74-...`) para el candidato, `updated_at` avanzó.
+      - Escenario 5 (ASINs inventados `B0000000ZZ`/`B9999999ZZ`, mismo efecto
+        observable que simular la fuente caída): `200`, `status: sin_fuente_datos`,
+        arrays vacíos, `listing.bullets` con 5 elementos (se entrega igual).
+      - Verificación de traza: 4 filas nuevas en `agent_runs` con
+        `agent_name: 'listing_agent'`, una por cada escenario que llegó a `200`
+        (Escenarios 1, 2, 4, 5) — ninguna para el Escenario 3 (`422`).
 
 ---
 

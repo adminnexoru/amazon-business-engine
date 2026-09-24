@@ -180,11 +180,27 @@ Managed with the Supabase CLI under `supabase/migrations/`. Current tables (all 
   always a manual user input, never estimated), `escenarios` (jsonb array of
   `BuyScenario`, possibly empty when no quantity tier fit the declared capital).
   Restricted to `service_role`.
+- **`listing_drafts`** — Listing Agent output per candidate (Fase 5, parte 1). Unlike
+  `procurement_documents`, this is 1:1 per candidate (`product_candidate_id unique`) —
+  regenerating always overwrites the previous draft, never versioned. `id`, `created_at`,
+  `updated_at`, `product_candidate_id` (FK → `product_candidates.id`, `on delete
+  cascade`, `unique`). Listing Draft fields (always present): `title`, `bullets` (jsonb
+  `string[]`, ≥5), `description`, `item_highlights` (text, ≤125 chars — the Amazon field
+  introduced 2026-07-27 alongside the 75-char title limit), `backend_search_terms`
+  (jsonb `string[]`), `missing_elements` (jsonb `string[]` — FR-003 signaling), and
+  `a_plus_content` (jsonb array of `{ tema, contenidoEsperado }`). Competitor Comparison
+  fields (all nullable — `null` when no `competitor_asins` were requested):
+  `competitor_asins_requested`, `competitor_asins_resolved` (both jsonb `string[]`),
+  `comparison_status` (`'complete' | 'sin_fuente_datos' | null`), `keyword_gaps`,
+  `missing_attributes`, `structural_differences` (jsonb arrays of `{ texto,
+  asinsSustento, confianza }` — confidence computed deterministically, never by Claude),
+  `nota_metodologica`. Restricted to `service_role`.
 
 `product_candidates`, `agent_runs`, `review_insights`, `supplier_searches`,
-`procurement_documents`, and `buy_simulations` are restricted to the `service_role` (see
-"Protected routes" below for why) — all reads/writes from the app go through
-`src/lib/supabase-admin.ts` server-side, never the `anon` client, for these tables.
+`procurement_documents`, `buy_simulations`, and `listing_drafts` are restricted to the
+`service_role` (see "Protected routes" below for why) — all reads/writes from the app go
+through `src/lib/supabase-admin.ts` server-side, never the `anon` client, for these
+tables.
 
 ## Migrations convention
 
@@ -415,6 +431,61 @@ whether a run involved an LLM.
 6. Inserts the result into `buy_simulations`. No scenario is ever marked "recommended" —
    the decision stays entirely human.
 
+### Listing Agent
+
+`POST /api/agents/listing` — `{ product_candidate_id: string, competitor_asins?:
+string[] }` (0-10 ASINs). Covers all three user stories of Fase 5 parte 1 in a single
+endpoint, since the A+ Content suggestion shares the same Claude call as the base listing
+(no separate function or route for it), and the competitor comparison is optional per
+request rather than a separate call.
+
+1. Rejects with 400, **before** creating any `agent_runs` row, if the body includes any
+   PPC/Advertising-related key (`manage_ppc`, `bids`, `campaign_id`, `acos_target`,
+   `ppc`) — message: "PPC/Advertising está fuera de alcance, bloqueado por falta de
+   acceso a Amazon Ads API". This capability doesn't exist anywhere in this endpoint;
+   an explicit request for it is rejected rather than silently ignored.
+2. Fetches the candidate. 404 if it doesn't exist; 422 (no `agent_runs` row, same
+   early-rejection pattern as the Supplier Agent's veredicto check) if
+   `raw_data.catalog` is missing — there's nothing real to generate from.
+3. Calls `generateListingDraft()` (`src/lib/claude-analysis.ts`, same
+   `messages.parse` + `zodOutputFormat` pattern as the other agents) with the
+   candidate's full `raw_data`. Returns `title` (≤75 chars), `bullets` (≥5, ≤255 chars
+   each), `description`, `itemHighlights` (≤125 chars — complementary to the title, not
+   a repeat of it), `backendSearchTerms` (≤249 bytes total, not per term — Amazon drops
+   the whole field silently if exceeded, never truncates it), `missingElements` (FR-003
+   signaling — never fabricated content to fill a gap), and `aPlusContent` (array of
+   `{ tema, contenidoEsperado }`). All four character/byte limits come from Amazon's
+   actual 2026 rules (title limit and Item Highlights both introduced 2026-07-27), not
+   invented numbers — there was no precedent for this anywhere else in the repo.
+4. If `competitor_asins` is empty or omitted, `comparison` is `null` and Claude is never
+   called for comparison (no wasted call). Otherwise, resolves each ASIN individually via
+   `getCatalogItem()` (`src/lib/sp-api.ts`, reused unmodified — same client the Scout
+   Agent uses), catching `SpApiError` per ASIN without aborting the loop so one bad ASIN
+   doesn't sink the rest.
+   - If zero of the requested ASINs resolve, `comparison.status` is
+     `'sin_fuente_datos'` and the comparison Claude call is skipped entirely — the
+     Listing Draft is still returned in full.
+   - Otherwise calls `compareListingToCompetitors()` (same file/pattern) with the
+     resolved competitors' catalog data. Returns `keywordGaps`, `missingAttributes`,
+     and `structuralDifferences`, each item with `texto` and `asinsSustento` (which
+     competitor ASINs support it) — **no confidence field**, Claude never computes that
+     percentage. `structuralDifferences` is scoped to bullet count and image count only:
+     A+ Content presence/absence is explicitly off-limits, confirmed against a real
+     `getCatalogItem()` response that this data doesn't exist there for any ASIN, own or
+     competitor's.
+5. `src/lib/listing-comparison-confidence.ts` then computes `confianza`
+   (`'alta' | 'media' | 'sin_dato'`) deterministically for every gap in code, never in
+   the prompt: `'alta'` if `asinsSustento.length / competitorAsinsResolved.length >=
+   0.7`, `'media'` if lower but non-zero, `'sin_dato'` if unsupported — same principle as
+   the Buy Simulator (never trust an LLM with arithmetic the code can do and audit).
+6. A single `upsert` on `listing_drafts` (`onConflict: product_candidate_id`) writes the
+   Listing Draft and the Competitor Comparison together in one write, replacing any
+   previous draft for that candidate — no version history is kept, and there's no
+   two-write race between the two halves of the same response.
+
+Logged to `agent_runs` with `agent_name: 'listing_agent'`. Endpoint protected same as
+the other agents. No UI in this phase — this is an API-only agent so far.
+
 ## Protected routes
 
 `src/proxy.ts` (the Next.js 16 successor to `middleware.ts` — see the breaking-changes
@@ -425,8 +496,8 @@ if those env vars aren't set, every matched route returns 401.
 Currently protected: `/scout`, `/api/agents/scout`, `/api/agents/analyst`,
 `/review-intelligence`, `/api/agents/review-intelligence`, `/api/agents/supplier` (which
 covers `/api/agents/supplier/[id]/select` and `/api/agents/supplier/[id]/landed-cost` via
-the `:path*` wildcard), `/api/agents/procurement/rfq`, `/api/agents/procurement/po`, and
-`/api/agents/buy-simulator` (and their subpaths). To
+the `:path*` wildcard), `/api/agents/procurement/rfq`, `/api/agents/procurement/po`,
+`/api/agents/buy-simulator`, and `/api/agents/listing` (and their subpaths). To
 protect another route, add it to the `matcher` array in `src/proxy.ts` — no new auth logic
 needed, the same check applies to everything in the matcher. If a route needs different
 credentials or a different auth scheme, branch on `request.nextUrl.pathname` inside

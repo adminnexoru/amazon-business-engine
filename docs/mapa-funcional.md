@@ -14,27 +14,7 @@ version_estandar: "1.0"
 
 Un sistema de agentes de IA que trabaja de forma continua hasta llegar a las decisiones que requieren autorización humana: un sistema cerrado de decisión, no un visor de información.
 
-## 2. De motores a agentes
-
-La visión original definía cinco motores; la arquitectura implementada los reparte en agentes.
-
-| Motor (visión original) | Agente | Qué hace |
-|---|---|---|
-| Product Intelligence | Scout | Extrae del catálogo (SP-API Catalog Items) ASIN, título, categoría, BSR, atributos, identificadores e imágenes; no trae precio |
-| Market Intelligence | Product Analyst | Analiza competencia: número de ofertas activas, Buy Box, reviews y rating del ASIN propio |
-| Demand Engine | Keepa (futuro) | Estimar ventas, revenue y tendencia a 3, 6 y 12 meses. Sin construir: Trend, Sales y Revenue estimate quedan en `sin_dato` |
-| Profit Engine | Product Analyst + Buy Simulator | Fees y margen (solo con costo manual); escenarios de inversión y recuperación en el Buy Simulator. ROI y Maximum Buy Price sin construir |
-| AI Product Analyst | Product Analyst (capa Claude) | Sintetiza todo en un veredicto `test` / `reject` / `necesita_mas_datos`; la decisión final BUY/TEST/REJECT es humana. Los pain points de reviews los produce Review Intelligence |
-
-## 3. Cadena completa de agentes
-
-```mermaid
-flowchart LR
-  S[Scout] --> A[Product Analyst] --> R[Review Intelligence] --> SU[Supplier]
-  SU --> P[Procurement] --> PD[Product Development] --> L[Listing]
-  L --> M[Marketing PPC] --> I[Inventory]
-  I -. reorder .-> SU
-```
+## 2. Componentes
 
 | Agente | Función | Autonomía |
 |---|---|---|
@@ -47,6 +27,32 @@ flowchart LR
 | Listing | Genera título, bullets, descripción y A+; compara contra top 10 | 🟢 Autónomo |
 | Marketing (PPC) | Ajusta bids y presupuesto bajo límites; detecta ACOS alto | 🟡 Auto + aprobación (cambios grandes) |
 | Inventory | Calcula reorder point y PO recomendada | 🔴 Aprobación humana (compromete capital) |
+
+### De motores a agentes
+
+La visión original definía cinco motores; la arquitectura implementada los reparte en agentes.
+
+| Motor (visión original) | Agente | Qué hace |
+|---|---|---|
+| Product Intelligence | Scout | Extrae del catálogo (SP-API Catalog Items) ASIN, título, categoría, BSR, atributos, identificadores e imágenes; no trae precio |
+| Market Intelligence | Product Analyst | Analiza competencia: número de ofertas activas, Buy Box, reviews y rating del ASIN propio |
+| Demand Engine | Keepa (futuro) | Estimar ventas, revenue y tendencia a 3, 6 y 12 meses. Sin construir: Trend, Sales y Revenue estimate quedan en `sin_dato` |
+| Profit Engine | Product Analyst + Buy Simulator | Fees y margen (solo con costo manual); escenarios de inversión y recuperación en el Buy Simulator. ROI y Maximum Buy Price sin construir |
+| AI Product Analyst | Product Analyst (capa Claude) | Sintetiza todo en un veredicto `test` / `reject` / `necesita_mas_datos`; la decisión final BUY/TEST/REJECT es humana. Los pain points de reviews los produce Review Intelligence |
+
+## 3. Flujo
+
+Cadena completa de agentes:
+
+```mermaid
+flowchart LR
+  S[Scout] --> A[Product Analyst] --> R[Review Intelligence] --> SU[Supplier]
+  SU --> P[Procurement] --> PD[Product Development] --> L[Listing]
+  L --> M[Marketing PPC] --> I[Inventory]
+  I -. reorder .-> SU
+```
+
+El detalle de cada agente está en [Componentes](#2-componentes).
 
 ## 4. Reglas de negocio no negociables
 
@@ -110,7 +116,9 @@ Si Apify no está configurado o falla, ambas quedan en `sin_dato`, sin regresió
 - Opcionalmente compara contra hasta 10 ASINs competidores: gaps de keywords, atributos faltantes y estructura, con confianza calculada en código (umbral 70%).
 - PPC bloqueado: rechazo activo (400) mientras no haya Amazon Ads API.
 
-## 6. Las 12 variables del Product Analyst
+## 6. Datos y fuentes
+
+Las 12 variables del Product Analyst:
 
 | # | Variable | Fuente | Disponibilidad v1 | Confianza |
 |---|---|---|---|---|
@@ -127,11 +135,21 @@ Si Apify no está configurado o falla, ambas quedan en `sin_dato`, sin regresió
 | 11 | Margin | Precio − Cost − Fees | ⚠️ solo con costo manual | 🟡 Media / ⚪ |
 | 12 | Differentiation | Razonamiento Claude | ✅ | 🟡 Media |
 
-## 7. Profit Engine: Maximum Buy Price
+## 7. Integraciones
+
+| Servicio | Qué se usa | Para qué | Variables de entorno | Límites y costo por uso |
+|---|---|---|---|---|
+| Amazon SP-API (región NA, marketplace amazon.com.mx) | Catalog Items 2022-04-01 (`getCatalogItem`, `searchCatalogItems`), Product Pricing v0 (`getCompetitivePricing`) y Product Fees v0 (`getMyFeesEstimateForASIN`), con access token LWA | Catálogo, BSR e identificadores del Scout y de la comparación del Listing; Precio, BSR, número de ofertas y Amazon fees del Product Analyst | `SP_API_CLIENT_ID`, `SP_API_CLIENT_SECRET`, `SP_API_REFRESH_TOKEN` | Catalog ~2 req/s (burst 2), Pricing 0.5 req/s (burst 1), Fees 1 req/s (burst 2); ante 429, reintento con backoff exponencial. Sin costo por uso |
+| Apify | `run-sync-get-dataset-items` de los actores `junglee/amazon-reviews-scraper` y `scrapesage/alibaba-scraper` | Reviews de competidores (Review Intelligence), Reviews y Rating del Product Analyst, y proveedores de Alibaba (Supplier) | `APIFY_API_TOKEN`, `APIFY_REVIEWS_ACTOR_ID`, `APIFY_SUPPLIER_ACTOR_ID`, `REVIEW_AGENT_MAX_ASINS_PER_RUN` | Plan free: 1 URL y 10 reviews por corrida, por eso una corrida por ASIN; máximo de ASINs por corrida de Review Intelligence configurable (default 5). Cada corrida consume cuota del plan |
+| Anthropic API | Messages API con salida estructurada validada con Zod (modelo `claude-sonnet-4-6`) | Análisis del Scout, veredicto del Product Analyst, Review Intelligence, comparación de proveedores, borrador de RFQ, plantilla de PO, listing y su comparación contra competidores. El Buy Simulator no usa Claude | `ANTHROPIC_API_KEY` (la lee el SDK) | Cobro por tokens; una llamada por análisis. Con cero resultados o menos del mínimo, el agente corta antes de llamar a Claude |
+| Supabase | Postgres con RLS: `product_candidates`, `agent_runs`, `review_insights`, `supplier_searches`, `procurement_documents`, `buy_simulations` y `listing_drafts` | Persistir candidatos, corridas de agentes y resultados. Cliente anónimo para lecturas; cliente `service_role` solo en servidor para escrituras | `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY` | Límites del plan contratado; sin costo por uso |
+| Vercel | Hosting de la app Next.js y dominio `abe.nexoru.ai` | Servir la interfaz y las rutas `/api/agents/*` en producción | Ninguna propia; las variables de producción se configuran en el proyecto de Vercel | Límites del plan contratado; sin costo por uso |
+
+## 8. Profit Engine: Maximum Buy Price
 
 Invertir la fórmula del margen: "Para conseguir un margen mínimo del 30%, no deberías pagar más de $X por unidad." Convierte el análisis en una herramienta de decisión de compra. Construible ya, porque Precio y Fees son confiables. Propuesta sin spec todavía.
 
-## 8. Visión de datos a largo plazo
+## 9. Visión de datos a largo plazo
 
 - **Histórico propio:** guardar cada análisis con fecha para construir series de BSR, precio y reviews; compensa en parte la falta de Keepa, sin reemplazarlo.
 - **Calibración:** con productos activos, comparar lo estimado (mercado) contra lo real (tienda propia) para medir la confiabilidad de las predicciones.

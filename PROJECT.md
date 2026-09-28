@@ -10,7 +10,7 @@ despliegue: nexoru-subdominio
 urls:
   - https://abe.nexoru.ai
 repo: adminnexoru/amazon-business-engine
-fecha_inicio: 2026-09-14       # primer commit (726c11f)
+fecha_inicio: 2026-09-01       # repo desde 2026-09-14
 fecha_objetivo: 2026-10-31
 stack:
   - nextjs
@@ -22,7 +22,7 @@ servicios:
   - apify
   - anthropic-api
 costo_mensual_usd: 0             # desglose en "Costo mensual"
-siguiente_hito: Por decidir entre Fase 5.2 (PPC) y Fase 6 (Inventory Agent)
+siguiente_hito: "Fase 6 — Inventory Agent (en paralelo: registro Amazon Ads API)"
 mapa_funcional: docs/mapa-funcional.md
 version_estandar: "1.0"
 ---
@@ -56,21 +56,21 @@ version_estandar: "1.0"
 
 ## Roadmap
 
-El estado de cada fase lo calcula el dashboard a partir de `tasks.md` de las specs vinculadas. La columna "Estado manual" solo se usa donde no hay `tasks.md` del cual calcularlo: Fase 0 (sin spec; su base está en `.specify/memory/constitution.md`) y Fase 4 (`006` y `007` tienen `spec.md` y `plan.md`, pero no `tasks.md`). Las Fases 1 a 2.2 sí tienen specs: se formalizaron de forma retroactiva el 2026-09-19.
+El estado de cada fase lo calcula el dashboard a partir de `tasks.md` de las specs vinculadas. La columna "Estado manual" solo se usa donde no hay `tasks.md` del cual calcularlo: Fases 0, 5.2, 6 y 7 (sin spec; la base de la Fase 0 está en `.specify/memory/constitution.md`) y Fase 4 (`006` y `007` tienen `spec.md` y `plan.md`, pero no `tasks.md`). Las Fases 1 a 2.2 sí tienen specs: se formalizaron de forma retroactiva el 2026-09-19.
 
 | Fase | Objetivo | Specs | Fecha objetivo | Estado manual |
 |---|---|---|---|---|
 | 0 | Arquitectura, hosting, dominio abe.nexoru.ai, Supabase | — | — | completa |
-| 1 | Scout Agent (SP-API Catalog + Claude) | 001-scout-agent | — | completa |
-| 1.5 | Product Analyst Agent (12 variables, Pricing y Fees API) | 002-product-analyst-agent | — | completa |
-| 2 | Review Intelligence Agent | 003-review-intelligence-agent | — | completa |
+| 1 | Scout Agent (SP-API Catalog + Claude) | 001-scout-agent | — | |
+| 1.5 | Product Analyst Agent (12 variables, Pricing y Fees API) | 002-product-analyst-agent | — | |
+| 2 | Review Intelligence Agent | 003-review-intelligence-agent | — | |
 | 2.2 | Reviews y Rating del Analyst vía Apify | 004-reviews-rating-improvement | — | |
 | 3 | Supplier Agent | 005-supplier-agent | — | |
-| 4 | Procurement Agent y Buy Simulator | 006-procurement-agent, 007-buy-simulator | — | implementada, sin validar |
+| 4 | Procurement Agent y Buy Simulator | 006-procurement-agent, 007-buy-simulator | — | implementada-sin-validar |
 | 5.1 | Listing Agent | 008-listing-agent | — | |
 | 5.2 | Marketing Agent (PPC) | — | 2026-10-31 | bloqueada |
-| 6 | Inventory Agent con aprobación humana | — | 2026-10-31 | |
-| 7 | Autonomous Business Manager (histórico y "Amazon Business Brain") | — | 2026-10-31 | |
+| 6 | Inventory Agent con aprobación humana | — | 2026-10-31 | pendiente |
+| 7 | Autonomous Business Manager (histórico y "Amazon Business Brain") | — | 2026-10-31 | pendiente |
 
 ## Decisiones clave
 
@@ -133,7 +133,8 @@ El estado de cada fase lo calcula el dashboard a partir de `tasks.md` de las spe
 
 ## Siguiente hito
 
-Por decidir entre:
-1. **Fase 5.2 (PPC):** requiere primero configurar Amazon Ads API.
-2. **Fase 6 (Inventory Agent):** requiere el rol SP-API de pedidos e inventario; siempre con aprobación humana.
+Fase 6 — Inventory Agent (en paralelo: registro Amazon Ads API).
+
+1. **Fase 6 (Inventory Agent):** requiere el rol SP-API de pedidos e inventario; siempre con aprobación humana.
+2. **En paralelo, registro en Amazon Ads API:** developer y OAuth, requisito para desbloquear la Fase 5.2 (PPC).
 3. **Opcional, no bloqueante:** resolver T8 antes de confiar en el Supplier Agent para candidatos con diferenciadores en español.

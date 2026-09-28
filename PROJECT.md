@@ -1,0 +1,127 @@
+---
+id: abe
+nombre: Autonomous Amazon Business Engine
+tipo: producto-nexoru
+cliente: Nexoru
+fase: construccion            # CONFIRMAR: opera en producción mientras se construyen fases nuevas
+fase_desde:                   # CONFIRMAR: fecha AAAA-MM-DD
+estado: verde                 # CONFIRMAR
+despliegue: nexoru-subdominio
+urls:
+  - https://abe.nexoru.ai
+repo: adminnexoru/amazon-business-engine
+fecha_inicio: 2026-09-14       # primer commit (726c11f)
+fecha_objetivo:               # CONFIRMAR
+stack:
+  - nextjs
+  - supabase
+  - vercel
+  - claude
+servicios:
+  - amazon-sp-api
+  - apify
+  - anthropic-api
+costo_mensual_usd:            # CONFIRMAR: Apify en plan free; sumar Anthropic API, Supabase y Vercel
+siguiente_hito: Por decidir entre Fase 5.2 (PPC) y Fase 6 (Inventory Agent)
+mapa_funcional: docs/mapa-funcional.md
+version_estandar: "1.0"
+---
+
+# Autonomous Amazon Business Engine (ABE)
+
+> Este archivo es la portada ejecutiva. El diseño funcional vive en [docs/mapa-funcional.md](docs/mapa-funcional.md) y el detalle técnico en `specs/` y `.specify/memory/constitution.md`. Si algo aquí no coincide con `specs/`, **`specs/` es la fuente de verdad**.
+
+## Resumen ejecutivo
+
+**Misión:** "Encuentra oportunidades rentables y haz crecer mi negocio Amazon."
+
+**Problema:** evaluar productos para vender en Amazon exige cruzar datos de catálogo, precios, comisiones, reviews y proveedores; hacerlo a mano es lento y propenso a decisiones con datos incompletos.
+
+**Qué es:** un sistema de agentes de IA que trabaja de forma continua hasta llegar a las decisiones que requieren autorización humana. No es una app que solo muestra información: es un sistema cerrado de decisión, con niveles de autonomía explícitos y la regla de nunca inventar datos.
+
+**Para quién:** operación propia de Nexoru en Amazon México (amazon.com.mx).
+
+**Métricas de éxito:** CONFIRMAR. Propuesta: candidatos evaluados por semana, porcentaje de variables con dato real (sin `sin_dato`) y, con productos activos, desviación entre lo estimado y lo real.
+
+## Alcance
+
+**Incluye:** descubrimiento de candidatos (Scout), análisis de 12 variables con veredicto `test` / `reject` / `necesita_mas_datos` (la decisión final BUY/TEST/REJECT es humana), inteligencia de reviews de competidores, comparación de proveedores en Alibaba, RFQ y PO como plantillas, simulador de compra, y generación de listings.
+
+**Fuera de alcance:**
+- Sourcing local MX/CDMX en v1 (Alibaba no tiene equivalente estructurado; extensión futura).
+- Pagos, transferencias, contratos o compras ejecutadas por el sistema.
+- Envío automático de RFQ o contacto con proveedores (el usuario copia y pega).
+- "Inventory Risk" en v1 (no hay fuente de historial de ventas).
+- PPC mientras no exista acceso a Amazon Ads API.
+
+## Roadmap
+
+El estado de cada fase lo calcula el dashboard a partir de `tasks.md` de las specs vinculadas. La columna "Estado manual" solo se usa donde no hay `tasks.md` del cual calcularlo: Fase 0 (sin spec; su base está en `.specify/memory/constitution.md`) y Fase 4 (`006` y `007` tienen `spec.md` y `plan.md`, pero no `tasks.md`). Las Fases 1 a 2.2 sí tienen specs: se formalizaron de forma retroactiva el 2026-09-19.
+
+| Fase | Objetivo | Specs | Fecha objetivo | Estado manual |
+|---|---|---|---|---|
+| 0 | Arquitectura, hosting, dominio abe.nexoru.ai, Supabase | — | — | completa |
+| 1 | Scout Agent (SP-API Catalog + Claude) | 001-scout-agent | — | completa |
+| 1.5 | Product Analyst Agent (12 variables, Pricing y Fees API) | 002-product-analyst-agent | — | completa |
+| 2 | Review Intelligence Agent | 003-review-intelligence-agent | — | completa |
+| 2.2 | Reviews y Rating del Analyst vía Apify | 004-reviews-rating-improvement | — | |
+| 3 | Supplier Agent | 005-supplier-agent | — | |
+| 4 | Procurement Agent y Buy Simulator | 006-procurement-agent, 007-buy-simulator | — | CONFIRMAR |
+| 5.1 | Listing Agent | 008-listing-agent | — | |
+| 5.2 | Marketing Agent (PPC) | — | CONFIRMAR | bloqueada |
+| 6 | Inventory Agent con aprobación humana | — | CONFIRMAR | |
+| 7 | Autonomous Business Manager (histórico y "Amazon Business Brain") | — | CONFIRMAR | |
+
+## Decisiones clave
+
+| Decisión | Razón |
+|---|---|
+| Nunca inventar datos: sin fuente o sin sustento, el valor es `sin_dato` o el ítem se omite | La confianza en el sistema depende de no rellenar huecos |
+| Las reglas de confianza son explícitas y acotadas por schema; cuando son aritméticas (comparación del Listing, Buy Simulator) se calculan en código, no en el prompt | Reglas verificables y reproducibles. En Analyst, Review Intelligence y Supplier las reglas viven en el prompt, con el schema Zod limitando los valores posibles (p. ej. el precio de proveedor no admite `alta`) |
+| Spec-Driven Development adoptado el 2026-09-19: Fases 0 a 2.2 formalizadas de forma retroactiva; desde Fase 3 el spec precede al código; CLI nativo de Spec Kit desde Fase 5 | Trazabilidad de requisitos, decisiones y evidencia |
+| En v1, el margen solo se calcula con costo manual (`cost_source: manual_estimate`) | No hay costo real hasta tener cotización de proveedor |
+| El Rating nunca llega a confianza alta | Es un promedio sobre muestra parcial, no el dato oficial de Amazon |
+| El precio de proveedor tiene como máximo confianza media | Es negociable por naturaleza |
+| El landed cost reporta USD y MXN por separado, sin sumar | No hay tasa de cambio real en el sistema |
+| El tiempo de entrega es `sin_dato` en v1 | El dato llega nulo en el 100% de los productos probados |
+| Buy Simulator sin Claude: aritmética determinística; el sell-through es input manual | Evitar estimaciones sin fuente |
+| PPC rechaza activamente con error 400 mientras no haya Ads API | Un rechazo explícito es más seguro que una ausencia silenciosa |
+| El Inventory Agent siempre requiere aprobación humana | Compromete capital |
+
+## Riesgos, bloqueos y dependencias
+
+- **Bloqueo:** Fase 5.2 (PPC) requiere registro de developer y OAuth de Amazon Ads API, distinto de SP-API.
+- **Dependencia:** Fase 6 requiere el rol SP-API "Seguimiento de pedidos e inventario".
+- **Dependencia:** Trend, Sales estimate y Revenue estimate requieren Keepa (sin contratar).
+- **Riesgo de costo:** cada corrida del Analyst más Review Intelligence consume dos cuotas de Apify por candidato; vigilar si crece el volumen.
+- **Riesgo de calidad:** Alibaba ignora diferenciadores en español al buscar proveedores (ver pendiente T8).
+
+## Pendientes conocidos
+
+- Scout, Analyst y Review Intelligence reescriben `raw_data` del mismo candidato sin lock optimista; dos corridas traslapadas pueden pisarse. Documentado en `AGENTS.md`.
+- Validar con un ASIN real la rama "media" del Rating (ver `specs/004-reviews-rating-improvement/`).
+- T8 de Fase 3: traducir o extraer keywords en inglés antes de buscar en Alibaba (`specs/005-supplier-agent/tasks.md`).
+- Maximum Buy Price (Profit Engine) diseñado pero no construido (sin spec).
+- T7 de Fase 1.5: pasar los riesgos cualitativos (hazmat, autorización de marca, perecibilidad) de texto libre a un campo estructurado `risk_flags` (`specs/002-product-analyst-agent/tasks.md`).
+- T12 de Fase 2: agregar `asins_evidencia` a cada ítem de Review Intelligence para poder auditar la regla de "≥2 ASINs distintos" (`specs/003-review-intelligence-agent/tasks.md`).
+- T11 de Fase 3: cruzar a mano al menos una opción de proveedor contra la página real de Alibaba (`specs/005-supplier-agent/tasks.md`).
+- Tests de regresión sin automatizar: "no inventar datos" en Scout (T8 de `001`) y Trend/Sales/Revenue en `sin_dato` (T8 de `002`).
+- Fase 4 no tiene `tasks.md` y los criterios de aceptación de `006` y `007` siguen sin marcar.
+
+## Evidencia de validación
+
+| Qué | Evidencia |
+|---|---|
+| Review Intelligence end-to-end | ASIN B0CKVCT4N1 en amazon.com.mx: texto completo, rating y compra verificada. Con 1 review, `confianza_general: sin_dato` y categorías sin sustento vacías |
+| Review Intelligence, confianza alta | 4 ASINs y 40 reviews: `confianza_general: alta` e ítems en `alta` en 3 de 4 categorías; un hallazgo con 2 reviews del mismo ASIN quedó correctamente en `media` |
+| Reviews y Rating del Analyst | ASIN B077HFMK1Z: Reviews en alta (229 calificaciones); Rating en `sin_dato` al no cumplir el umbral (17.9% contra 70% requerido) |
+| Supplier Agent | 4 de 4 opciones con precio en confianza media; bug de mezcla de monedas detectado y corregido; candidato sin veredicto `test` recibe 422 |
+| Listing Agent | Los 5 escenarios de `quickstart.md` pasaron en servidor local (no en producción): 3/3 competidores resueltos con confianza `alta`/`media` calculada en código; 422 sin registro en `agent_runs` para un candidato sin catálogo; ASINs inexistentes dan `sin_fuente_datos` y el listing se entrega igual |
+| Actores de Apify descartados | `crawlerbros/amazon-reviews-scraper` y `agenscrape/amazon-mexico-product-scraper` no funcionaron contra .com.mx |
+
+## Siguiente hito
+
+Por decidir entre:
+1. **Fase 5.2 (PPC):** requiere primero configurar Amazon Ads API.
+2. **Fase 6 (Inventory Agent):** requiere el rol SP-API de pedidos e inventario; siempre con aprobación humana.
+3. **Opcional, no bloqueante:** resolver T8 antes de confiar en el Supplier Agent para candidatos con diferenciadores en español.

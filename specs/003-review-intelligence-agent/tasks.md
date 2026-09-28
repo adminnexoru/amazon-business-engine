@@ -33,14 +33,14 @@
         reviews de soporte vienen del mismo ASIN (B077HFMK1Z) — confirma que
         la regla de "≥2 ASINs distintos" se está aplicando, no solo el
         conteo de reviews
-- [ ] T10: Resolver la condición de carrera en `raw_data` compartida entre
+- **Movida a 009 (T005):** T10: Resolver la condición de carrera en `raw_data` compartida entre
       Scout/Analyst/Review Intelligence (función `update` atómica o lock
       optimista) — pendiente, no bloqueante, afecta a las tres fases.
-- [ ] T11: Verificar el tamaño real de `ourProductContext` (todo el
+- **Movida a 009 (T006):** T11: Verificar el tamaño real de `ourProductContext` (todo el
       `raw_data` del candidato serializado sin recortar) contra un
       candidato que ya tenga análisis del Analyst, para confirmar que no
       infla el costo del prompt sin que se note.
-- [ ] T12: Agregar un campo opcional `asins_evidencia: string[]` a cada ítem del
+- **Movida a 009 (T007):** T12: Agregar un campo opcional `asins_evidencia: string[]` a cada ítem del
       schema Zod de `ReviewInsightItem` (además de `evidencia_count`), para que
       cada hallazgo declare explícitamente de qué ASINs viene su evidencia.
       Hoy no hay forma de auditar de manera independiente si un ítem marcado
@@ -49,3 +49,5 @@
       diferencia de la regla de "nunca inventar un ítem", que sí está forzada
       estructuralmente por el schema, esta solo se verificó una vez de forma
       manual (ver evidencia de T9).
+
+> Las tareas marcadas "Movida a 009" siguen abiertas en `specs/009-pendientes-fases-1-3/tasks.md`. Se conservan aquí como registro de dónde surgieron.

@@ -46,7 +46,7 @@
 
 ## Pendientes descubiertos durante la prueba (no bloqueantes, pero reales)
 
-- [ ] T8: El `searchTerm` usado en v1 es el `itemName` completo tal cual
+- **Movida a 009 (T009):** T8: El `searchTerm` usado en v1 es el `itemName` completo tal cual
       (español, largo, sin traducir) — spec.md lo permite explícitamente
       ("no optimices extracción de keywords todavía"), pero la prueba real
       reveló que esto sí degrada la relevancia de resultados: con el
@@ -76,9 +76,11 @@
       leadScore) → HTTP 200, fila actualizada con
       `selected_supplier_id: "200719916"`,
       `selected_at: "2026-09-19T19:59:08.137+00:00"`.
-- [ ] T11: Cruce manual de al menos una de las 4 opciones contra la página
+- **Movida a 009 (T010):** T11: Cruce manual de al menos una de las 4 opciones contra la página
       real de Alibaba (abrir el `supplierUrl`/`url` del producto) — no se
       hizo en esta prueba; la confianza actual se basa en verificación
       estructural (coincidencia con el dataset crudo, orden por leadScore),
       no en confirmación visual directa como sí se hizo con las reviews de
       Amazon en Fase 2.
+
+> Las tareas marcadas "Movida a 009" siguen abiertas en `specs/009-pendientes-fases-1-3/tasks.md`. Se conservan aquí como registro de dónde surgieron.

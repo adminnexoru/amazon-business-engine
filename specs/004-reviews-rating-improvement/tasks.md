@@ -26,8 +26,10 @@
       - Caso NO cubierto por esta prueba: la rama `media` de Rating, que
         requiere que AMBAS condiciones (a) y (b) se cumplan — sigue sin
         evidencia real con un candidato donde la muestra sea representativa.
-- [ ] T13: Prueba end-to-end con un ASIN que tenga baja proporción de
+- **Movida a 009 (T008):** T13: Prueba end-to-end con un ASIN que tenga baja proporción de
       calificaciones "silenciosas" (totalWrittenReviews/totalRatings alto,
       idealmente un producto con pocas reviews totales donde casi todas
       tengan texto) para validar la rama `media` de Rating, la única de
       las tres (alta/media/sin_dato) sin evidencia real todavía.
+
+> Las tareas marcadas "Movida a 009" siguen abiertas en `specs/009-pendientes-fases-1-3/tasks.md`. Se conservan aquí como registro de dónde surgieron.

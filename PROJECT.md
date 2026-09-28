@@ -68,7 +68,7 @@ El estado de cada fase lo calcula el dashboard a partir de `tasks.md` de las spe
 | 2 | Review Intelligence Agent | 003-review-intelligence-agent | — | |
 | 2.2 | Reviews y Rating del Analyst vía Apify | 004-reviews-rating-improvement | — | |
 | 3 | Supplier Agent | 005-supplier-agent | — | |
-| 3.5 | Estabilización: pendientes de las Fases 1 a 3 | 009-pendientes-fases-1-3 | — | |
+| 3.5 | Estabilización: pendientes de las Fases 1 a 3 | 009-pendientes-fases-1-3 | 2026-10-15 | |
 | 4 | Procurement Agent y Buy Simulator | 006-procurement-agent, 007-buy-simulator | — | implementada-sin-validar |
 | 5.1 | Listing Agent | 008-listing-agent | — | |
 | 5.2 | Marketing Agent (PPC) | — | 2026-10-31 | bloqueada |
@@ -90,6 +90,7 @@ El estado de cada fase lo calcula el dashboard a partir de `tasks.md` de las spe
 | Buy Simulator sin Claude: aritmética determinística; el sell-through es input manual | Evitar estimaciones sin fuente |
 | PPC rechaza activamente con error 400 mientras no haya Ads API | Un rechazo explícito es más seguro que una ausencia silenciosa |
 | El Inventory Agent siempre requiere aprobación humana | Compromete capital |
+| El repo se mantiene público por decisión del Dueño, aunque contiene estrategia comercial (ASINs evaluados, proveedores seleccionados) | Riesgo aceptado conscientemente. Se revisará si el proyecto pasa a operar con datos de clientes |
 
 ## Costo mensual
 

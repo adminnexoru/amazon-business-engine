@@ -3,15 +3,15 @@ id: abe
 nombre: Autonomous Amazon Business Engine
 tipo: producto-nexoru
 cliente: Nexoru
-fase: construccion            # CONFIRMAR: opera en producción mientras se construyen fases nuevas
-fase_desde:                   # CONFIRMAR: fecha AAAA-MM-DD
-estado: verde                 # CONFIRMAR
+fase: construccion
+fase_desde: 2026-09-01
+estado: verde
 despliegue: nexoru-subdominio
 urls:
   - https://abe.nexoru.ai
 repo: adminnexoru/amazon-business-engine
 fecha_inicio: 2026-09-14       # primer commit (726c11f)
-fecha_objetivo:               # CONFIRMAR
+fecha_objetivo: 2026-10-31
 stack:
   - nextjs
   - supabase
@@ -21,7 +21,7 @@ servicios:
   - amazon-sp-api
   - apify
   - anthropic-api
-costo_mensual_usd:            # CONFIRMAR: Apify en plan free; sumar Anthropic API, Supabase y Vercel
+costo_mensual_usd: 0             # desglose en "Costo mensual"
 siguiente_hito: Por decidir entre Fase 5.2 (PPC) y Fase 6 (Inventory Agent)
 mapa_funcional: docs/mapa-funcional.md
 version_estandar: "1.0"
@@ -41,7 +41,7 @@ version_estandar: "1.0"
 
 **Para quién:** operación propia de Nexoru en Amazon México (amazon.com.mx).
 
-**Métricas de éxito:** CONFIRMAR. Propuesta: candidatos evaluados por semana, porcentaje de variables con dato real (sin `sin_dato`) y, con productos activos, desviación entre lo estimado y lo real.
+**Métricas de éxito:** candidatos evaluados por semana, porcentaje de variables con dato real (sin `sin_dato`) y, con productos activos, desviación entre lo estimado y lo real.
 
 ## Alcance
 
@@ -66,11 +66,11 @@ El estado de cada fase lo calcula el dashboard a partir de `tasks.md` de las spe
 | 2 | Review Intelligence Agent | 003-review-intelligence-agent | — | completa |
 | 2.2 | Reviews y Rating del Analyst vía Apify | 004-reviews-rating-improvement | — | |
 | 3 | Supplier Agent | 005-supplier-agent | — | |
-| 4 | Procurement Agent y Buy Simulator | 006-procurement-agent, 007-buy-simulator | — | CONFIRMAR |
+| 4 | Procurement Agent y Buy Simulator | 006-procurement-agent, 007-buy-simulator | — | implementada, sin validar |
 | 5.1 | Listing Agent | 008-listing-agent | — | |
-| 5.2 | Marketing Agent (PPC) | — | CONFIRMAR | bloqueada |
-| 6 | Inventory Agent con aprobación humana | — | CONFIRMAR | |
-| 7 | Autonomous Business Manager (histórico y "Amazon Business Brain") | — | CONFIRMAR | |
+| 5.2 | Marketing Agent (PPC) | — | 2026-10-31 | bloqueada |
+| 6 | Inventory Agent con aprobación humana | — | 2026-10-31 | |
+| 7 | Autonomous Business Manager (histórico y "Amazon Business Brain") | — | 2026-10-31 | |
 
 ## Decisiones clave
 
@@ -88,12 +88,24 @@ El estado de cada fase lo calcula el dashboard a partir de `tasks.md` de las spe
 | PPC rechaza activamente con error 400 mientras no haya Ads API | Un rechazo explícito es más seguro que una ausencia silenciosa |
 | El Inventory Agent siempre requiere aprobación humana | Compromete capital |
 
+## Costo mensual
+
+| Servicio | USD/mes | Nota |
+|---|---|---|
+| Anthropic API | 0 | Verificar el consumo real en la consola de Anthropic |
+| Supabase | 0 | |
+| Vercel | 0 | |
+| Apify | 0 | Plan free |
+| Amazon SP-API | — | Sin costo |
+| **Total** | **0** | |
+
 ## Riesgos, bloqueos y dependencias
 
 - **Bloqueo:** Fase 5.2 (PPC) requiere registro de developer y OAuth de Amazon Ads API, distinto de SP-API.
 - **Dependencia:** Fase 6 requiere el rol SP-API "Seguimiento de pedidos e inventario".
 - **Dependencia:** Trend, Sales estimate y Revenue estimate requieren Keepa (sin contratar).
 - **Riesgo de costo:** cada corrida del Analyst más Review Intelligence consume dos cuotas de Apify por candidato; vigilar si crece el volumen.
+- **Riesgo de calendario:** las fases 5.2, 6 y 7 comparten la fecha objetivo del 2026-10-31, y la 5.2 depende del registro en Amazon Ads API. Si ese registro no avanza antes del 2026-10-15, el estado del proyecto pasa a ámbar.
 - **Riesgo de calidad:** Alibaba ignora diferenciadores en español al buscar proveedores (ver pendiente T8).
 
 ## Pendientes conocidos
@@ -106,7 +118,7 @@ El estado de cada fase lo calcula el dashboard a partir de `tasks.md` de las spe
 - T12 de Fase 2: agregar `asins_evidencia` a cada ítem de Review Intelligence para poder auditar la regla de "≥2 ASINs distintos" (`specs/003-review-intelligence-agent/tasks.md`).
 - T11 de Fase 3: cruzar a mano al menos una opción de proveedor contra la página real de Alibaba (`specs/005-supplier-agent/tasks.md`).
 - Tests de regresión sin automatizar: "no inventar datos" en Scout (T8 de `001`) y Trend/Sales/Revenue en `sin_dato` (T8 de `002`).
-- Fase 4 no tiene `tasks.md` y los criterios de aceptación de `006` y `007` siguen sin marcar.
+- Validar la Fase 4: `006` y `007` no tienen `tasks.md` y sus criterios de aceptación siguen sin marcar. Falta un `tasks.md` retroactivo o verificar los criterios con pruebas reales.
 
 ## Evidencia de validación
 

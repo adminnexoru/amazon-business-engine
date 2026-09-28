@@ -7,7 +7,7 @@
   `zodOutputFormat` que Scout)
 - Persistencia: merge en `raw_data.analyst` del `product_candidate` (misma
   tabla que usa Scout, no una tabla nueva)
-- Trazabilidad: `agent_runs` con `agent_name: 'product_analyst_agent'`
+- Trazabilidad: `agent_runs` con `agent_name: 'analyst_agent'`
 - Exposición: mismo patrón de Basic Auth que Scout
 
 ## Decisiones y su razón

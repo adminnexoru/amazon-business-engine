@@ -7,7 +7,7 @@
 - [x] T4: Soportar costo manual opcional para calcular Margin
 - [x] T5: Emitir veredicto `test` / `reject` / `necesita_mas_datos`
 - [x] T6: Mergear resultado en `raw_data.analyst` y loggear en `agent_runs`
-- [ ] T7: Generalizar la detección de riesgos cualitativos a un campo
+- **Movida a 009 (T003):** T7: Generalizar la detección de riesgos cualitativos a un campo
       estructurado `risk_flags` (array de objetos, no un booleano suelto),
       en vez de dejarlos como texto libre dentro de
       `justificacion`/`differentiation`/`nota_metodologica`. La versión
@@ -40,7 +40,9 @@
       de los auriculares: alto) — un solo booleano perdería justo esa
       distinción, que es la que más importa para estimar costo/riesgo de
       flete en Fase 3.
-- [ ] T8: Test de regresión que confirme que Trend/Sales estimate/Revenue
+- **Movida a 009 (T004):** T8: Test de regresión que confirme que Trend/Sales estimate/Revenue
       estimate se mantienen en `sin_dato` mientras no exista una fuente de
       historial conectada — evita que una futura mejora los rellene "por
       accidente" con una estimación no solicitada.
+
+> Las tareas marcadas "Movida a 009" siguen abiertas en `specs/009-pendientes-fases-1-3/tasks.md`. Se conservan aquí como registro de dónde surgieron.

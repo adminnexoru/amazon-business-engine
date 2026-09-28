@@ -7,14 +7,16 @@
       de candidato
 - [x] T5: Proteger ruta `/api/agents/scout` con Basic Auth
 - [x] T6: Registrar cada corrida en `agent_runs`
-- [~] T7: Contract test — validar que el schema de salida de Claude siempre
+- **Movida a 009 (T001), parcial:** T7: Contract test — validar que el schema de salida de Claude siempre
       incluye los campos esperados antes de escribir a `product_candidates`.
       **Parcialmente cubierto**: `zodOutputFormat` fuerza el schema en cada
       llamada a la API (no es opcional ni dependiente de que Claude "decida"
       cumplirlo), lo cual es la garantía más fuerte posible en tiempo de
       ejecución. Sigue pendiente un test automatizado de regresión que
       falle explícitamente en CI si el schema se relaja sin querer.
-- [ ] T8: Test de "no inventar datos" — correr con un ASIN de catálogo pobre
+- **Movida a 009 (T002):** T8: Test de "no inventar datos" — correr con un ASIN de catálogo pobre
       y verificar que los campos quedan vacíos, no rellenados. No
       automatizado todavía; solo validado manualmente durante el desarrollo
       inicial.
+
+> Las tareas marcadas "Movida a 009" siguen abiertas en `specs/009-pendientes-fases-1-3/tasks.md`. Se conservan aquí como registro de dónde surgieron.

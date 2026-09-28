@@ -10,7 +10,7 @@ despliegue: nexoru-subdominio
 urls:
   - https://abe.nexoru.ai
 repo: adminnexoru/amazon-business-engine
-fecha_inicio: 2026-09-01       # repo desde 2026-09-14
+fecha_inicio: 2026-09-01
 fecha_objetivo: 2026-10-31
 stack:
   - nextjs
@@ -21,7 +21,7 @@ servicios:
   - amazon-sp-api
   - apify
   - anthropic-api
-costo_mensual_usd: 0             # desglose en "Costo mensual"
+costo_mensual_usd: 0
 siguiente_hito: "Fase 6 — Inventory Agent (en paralelo: registro Amazon Ads API)"
 mapa_funcional: docs/mapa-funcional.md
 version_estandar: "1.0"
@@ -38,6 +38,8 @@ version_estandar: "1.0"
 **Problema:** evaluar productos para vender en Amazon exige cruzar datos de catálogo, precios, comisiones, reviews y proveedores; hacerlo a mano es lento y propenso a decisiones con datos incompletos.
 
 **Qué es:** un sistema de agentes de IA que trabaja de forma continua hasta llegar a las decisiones que requieren autorización humana. No es una app que solo muestra información: es un sistema cerrado de decisión, con niveles de autonomía explícitos y la regla de nunca inventar datos.
+
+**Inicio:** el proyecto inició el 2026-09-01; el repositorio existe desde el 2026-09-14 (primer commit).
 
 **Para quién:** operación propia de Nexoru en Amazon México (amazon.com.mx).
 
@@ -56,7 +58,7 @@ version_estandar: "1.0"
 
 ## Roadmap
 
-El estado de cada fase lo calcula el dashboard a partir de `tasks.md` de las specs vinculadas. La columna "Estado manual" solo se usa donde no hay `tasks.md` del cual calcularlo: Fases 0, 5.2, 6 y 7 (sin spec; la base de la Fase 0 está en `.specify/memory/constitution.md`) y Fase 4 (`006` y `007` tienen `spec.md` y `plan.md`, pero no `tasks.md`). Las Fases 1 a 2.2 sí tienen specs: se formalizaron de forma retroactiva el 2026-09-19.
+El estado de cada fase lo calcula el dashboard a partir de `tasks.md` de las specs vinculadas. La columna "Estado manual" solo se usa donde no hay `tasks.md` del cual calcularlo: Fases 0, 5.2, 6 y 7 (sin spec; la base de la Fase 0 está en `.specify/memory/constitution.md`) y Fase 4 (`006` y `007` tienen `spec.md` y `plan.md`, pero no `tasks.md`). Las Fases 1 a 2.2 sí tienen specs: se formalizaron de forma retroactiva el 2026-09-19. Sus tareas abiertas, y las de la Fase 3, se movieron a la fase de Estabilización (`009`) para que esas fases puedan cerrarse.
 
 | Fase | Objetivo | Specs | Fecha objetivo | Estado manual |
 |---|---|---|---|---|
@@ -66,6 +68,7 @@ El estado de cada fase lo calcula el dashboard a partir de `tasks.md` de las spe
 | 2 | Review Intelligence Agent | 003-review-intelligence-agent | — | |
 | 2.2 | Reviews y Rating del Analyst vía Apify | 004-reviews-rating-improvement | — | |
 | 3 | Supplier Agent | 005-supplier-agent | — | |
+| 3.5 | Estabilización: pendientes de las Fases 1 a 3 | 009-pendientes-fases-1-3 | — | |
 | 4 | Procurement Agent y Buy Simulator | 006-procurement-agent, 007-buy-simulator | — | implementada-sin-validar |
 | 5.1 | Listing Agent | 008-listing-agent | — | |
 | 5.2 | Marketing Agent (PPC) | — | 2026-10-31 | bloqueada |
@@ -99,6 +102,8 @@ El estado de cada fase lo calcula el dashboard a partir de `tasks.md` de las spe
 | Amazon SP-API | — | Sin costo |
 | **Total** | **0** | |
 
+El total es el valor de `costo_mensual_usd` en el frontmatter.
+
 ## Riesgos, bloqueos y dependencias
 
 - **Bloqueo:** Fase 5.2 (PPC) requiere registro de developer y OAuth de Amazon Ads API, distinto de SP-API.
@@ -106,18 +111,17 @@ El estado de cada fase lo calcula el dashboard a partir de `tasks.md` de las spe
 - **Dependencia:** Trend, Sales estimate y Revenue estimate requieren Keepa (sin contratar).
 - **Riesgo de costo:** cada corrida del Analyst más Review Intelligence consume dos cuotas de Apify por candidato; vigilar si crece el volumen.
 - **Riesgo de calendario:** las fases 5.2, 6 y 7 comparten la fecha objetivo del 2026-10-31, y la 5.2 depende del registro en Amazon Ads API. Si ese registro no avanza antes del 2026-10-15, el estado del proyecto pasa a ámbar.
-- **Riesgo de calidad:** Alibaba ignora diferenciadores en español al buscar proveedores (ver pendiente T8).
+- **Riesgo de calidad:** Alibaba ignora diferenciadores en español al buscar proveedores (T009 de `specs/009-pendientes-fases-1-3/`).
 
 ## Pendientes conocidos
 
-- Scout, Analyst y Review Intelligence reescriben `raw_data` del mismo candidato sin lock optimista; dos corridas traslapadas pueden pisarse. Documentado en `AGENTS.md`.
-- Validar con un ASIN real la rama "media" del Rating (ver `specs/004-reviews-rating-improvement/`).
-- T8 de Fase 3: traducir o extraer keywords en inglés antes de buscar en Alibaba (`specs/005-supplier-agent/tasks.md`).
+- Las tareas abiertas de las Fases 1 a 3 están en la fase de Estabilización (`specs/009-pendientes-fases-1-3/tasks.md`). Las principales son:
+  - la condición de carrera en `raw_data` entre Scout, Analyst y Review Intelligence (T005);
+  - los tests automatizados de "no inventar datos" (T001, T002, T004);
+  - `risk_flags` estructurado (T003) y `asins_evidencia` (T007);
+  - keywords en inglés para Alibaba (T009);
+  - validar la rama `media` de Rating (T008) y cruzar una opción de proveedor contra Alibaba (T010).
 - Maximum Buy Price (Profit Engine) diseñado pero no construido (sin spec).
-- T7 de Fase 1.5: pasar los riesgos cualitativos (hazmat, autorización de marca, perecibilidad) de texto libre a un campo estructurado `risk_flags` (`specs/002-product-analyst-agent/tasks.md`).
-- T12 de Fase 2: agregar `asins_evidencia` a cada ítem de Review Intelligence para poder auditar la regla de "≥2 ASINs distintos" (`specs/003-review-intelligence-agent/tasks.md`).
-- T11 de Fase 3: cruzar a mano al menos una opción de proveedor contra la página real de Alibaba (`specs/005-supplier-agent/tasks.md`).
-- Tests de regresión sin automatizar: "no inventar datos" en Scout (T8 de `001`) y Trend/Sales/Revenue en `sin_dato` (T8 de `002`).
 - Validar la Fase 4: `006` y `007` no tienen `tasks.md` y sus criterios de aceptación siguen sin marcar. Falta un `tasks.md` retroactivo o verificar los criterios con pruebas reales.
 
 ## Evidencia de validación
@@ -137,4 +141,4 @@ Fase 6 — Inventory Agent (en paralelo: registro Amazon Ads API).
 
 1. **Fase 6 (Inventory Agent):** requiere el rol SP-API de pedidos e inventario; siempre con aprobación humana.
 2. **En paralelo, registro en Amazon Ads API:** developer y OAuth, requisito para desbloquear la Fase 5.2 (PPC).
-3. **Opcional, no bloqueante:** resolver T8 antes de confiar en el Supplier Agent para candidatos con diferenciadores en español.
+3. **Opcional, no bloqueante:** resolver T009 de `009` antes de confiar en el Supplier Agent para candidatos con diferenciadores en español.

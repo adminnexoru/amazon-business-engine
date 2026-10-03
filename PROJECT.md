@@ -24,7 +24,7 @@ servicios:
 costo_mensual_usd: 0
 siguiente_hito: "Fase 6 — Inventory Agent (en paralelo: registro Amazon Ads API)"
 mapa_funcional: docs/mapa-funcional.md
-version_estandar: "1.0"
+version_estandar: "1.1"
 ---
 
 # Autonomous Amazon Business Engine (ABE)

@@ -1,7 +1,7 @@
 ---
 proyecto: abe
 tipo_documento: mapa-funcional
-version_estandar: "1.0"
+version_estandar: "1.1"
 ---
 
 # ABE: mapa de diseño funcional

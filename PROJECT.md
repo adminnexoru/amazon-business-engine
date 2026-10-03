@@ -10,6 +10,7 @@ despliegue: nexoru-subdominio
 urls:
   - https://abe.nexoru.ai
 repo: adminnexoru/amazon-business-engine
+visibilidad: publico
 fecha_inicio: 2026-09-01
 fecha_objetivo: 2026-10-31
 stack:
@@ -24,7 +25,7 @@ servicios:
 costo_mensual_usd: 0
 siguiente_hito: "Fase 6 — Inventory Agent (en paralelo: registro Amazon Ads API)"
 mapa_funcional: docs/mapa-funcional.md
-version_estandar: "1.1"
+version_estandar: "1.2"
 ---
 
 # Autonomous Amazon Business Engine (ABE)
